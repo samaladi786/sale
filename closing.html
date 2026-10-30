@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="ml">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Daily Cash Closing - AlNassr</title>
+  
+  <!-- PWA META TAGS -->
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Cash Closing">
+  <link rel="manifest" href="closing-manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+  <!-- TAILWIND CSS & ICONS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- SUPABASE JS CLIENT -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- MULTI-SHOP CONFIG INTEGRATION -->
+  <script src="config.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800;900&family=Noto+Sans+Malayalam:wght@500;700;900&display=swap');
+    body { 
+      font-family: 'Manrope', 'Noto Sans Malayalam', sans-serif; 
+      -webkit-tap-highlight-color: transparent;
+    }
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+    .uppercase-input { text-transform: uppercase; }
+
+    /* COMPACT A4 PRINT SETUP (SINGLE PAGE) */
+    @media print {
+      @page { size: A4 portrait; margin: 8mm 10mm; }
+      .no-print { display: none !important; }
+      body { background: white !important; padding: 0 !important; color: #000 !important; }
+      .print-border { border: 1.5px solid #000 !important; border-radius: 0 !important; }
+      .print-table th, .print-table td { border: 1px solid #333 !important; font-size: 11px !important; padding: 4px 6px !important; }
+      .print-box { border: 1.5px solid #000 !important; background: transparent !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen p-2 sm:p-4 text-xs flex flex-col justify-center items-center">
+
+  <!-- ========================================== -->
+  <!-- 1. LOGIN SCREEN (4-DIGIT AUTO-SUBMIT)      -->
+  <!-- ========================================== -->
+  <div id="loginScreen" class="w-full max-w-sm bg-white p-6 rounded-3xl shadow-2xl border border-slate-200 text-center space-y-4">
+    <div class="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+      <i data-lucide="lock" class="w-8 h-8"></i>
+    </div>
+    <div>
+      <h2 class="text-base font-black text-slate-900 uppercase">ക്യാഷ് ക്ലോസിംഗ് ലോഗിൻ</h2>
+      <p class="text-[11px] font-bold text-slate-500 mt-0.5">4 അക്ക ഷോപ്പ് പിൻ അല്ലെങ്കിൽ മാസ്റ്റർ പിൻ നൽകുക</p>
+    </div>
+    <div>
+      <input 
+        type="password" 
+        id="loginPinInput" 
+        maxlength="4" 
+        inputmode="numeric" 
+        pattern="[0-9]*" 
+        placeholder="••••" 
+        onclick="this.select()"
+        onfocus="this.select()"
+        oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4); if(this.value.length === 4) { verifyLogin(); }"
+        class="w-full text-center text-3xl font-black tracking-[0.35em] p-3 rounded-2xl border-2 border-slate-300 bg-slate-50 outline-none focus:border-emerald-600 focus:bg-white transition cursor-pointer"
+        onkeydown="if(event.key === 'Enter') verifyLogin();"
+      />
+    </div>
+    <button 
+      type="button" 
+      onclick="verifyLogin()" 
+      class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition cursor-pointer">
+      ലോഗിൻ ചെയ്യുക
+    </button>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 2. MAIN APP CONTAINER (ACTIVE ENTRY PAD)   -->
+  <!-- ========================================== -->
+  <div id="appContainer" class="w-full max-w-2xl bg-white rounded-3xl shadow-lg border border-slate-200 p-3 sm:p-5 print-border space-y-3.5 hidden my-auto relative">
+    
+    <!-- TOP CONTROLS (SHOP SELECTOR, NAV & HISTORY) -->
+    <div class="no-print bg-slate-50 p-2.5 sm:p-3 rounded-2xl border border-slate-200 flex flex-wrap justify-between items-center gap-2">
+      <div class="flex items-center gap-2">
+        <label class="font-black text-slate-700">ഷോപ്പ്:</label>
+        <select id="shopSelector" onchange="onShopChange()" class="p-2 px-2.5 border border-slate-300 rounded-xl font-black bg-white outline-none cursor-pointer text-xs">
+        </select>
+        <span id="shopFixedBadge" class="hidden font-black text-xs text-emerald-800 bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-300"></span>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- HISTORY BUTTON -->
+        <button onclick="openHistoryModal()" class="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl text-[11px] shadow flex items-center gap-1 transition cursor-pointer">
+          <i data-lucide="history" class="w-3.5 h-3.5"></i> 📜 ഹിസ്റ്ററി
+        </button>
+
+        <!-- QUICK LINK TO MAIN POS APP -->
+        <a href="mobile.html" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-white font-black rounded-xl text-[11px] shadow flex items-center gap-1 transition">
+          <i data-lucide="smartphone" class="w-3.5 h-3.5"></i> POS ആപ്പ്
+        </a>
+
+        <!-- PWA INSTALL BUTTON -->
+        <button id="pwaInstallBtn" onclick="triggerPwaInstall()" class="hidden px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-[11px] shadow flex items-center gap-1 cursor-pointer">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i> ഇൻസ്റ്റാൾ
+        </button>
+
+        <label class="font-black text-slate-700">തീയതി:</label>
+        <input type="date" id="closingDate" onchange="onDateChanged()" class="p-1.5 px-2 border border-slate-300 rounded-xl font-black bg-white outline-none cursor-pointer text-xs" />
+
+        <button onclick="logoutApp()" title="ലോഗൗട്ട്" class="p-2 text-slate-600 hover:bg-slate-200 rounded-xl border border-slate-300 font-bold transition flex items-center gap-1 cursor-pointer">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- PRINT HEADER -->
+    <div class="border-b-2 border-slate-900 pb-2 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <img id="shopLogo" src="" alt="Logo" class="w-10 h-10 object-contain hidden" />
+        <div>
+          <h1 id="shopTitle" class="text-base sm:text-lg font-black text-slate-950 uppercase tracking-wide">SHOP NAME</h1>
+          <p class="text-[11px] font-bold text-slate-600">DAILY CASH CLOSING REPORT</p>
+        </div>
+      </div>
+      <div class="text-right">
+        <p class="text-xs font-black text-slate-900" id="printDateDisplay"></p>
+        <span class="text-[10px] font-bold text-slate-500 uppercase">Cashier Verification</span>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 1. EXPENSES & PURCHASES (ഏറ്റവും മുകളിൽ)      -->
+    <!-- ========================================== -->
+    <div class="bg-amber-50/70 p-3 rounded-2xl border-2 border-amber-300 print-box space-y-2.5">
+      <span class="font-black text-amber-950 text-xs sm:text-sm block">⚡ പെട്ടിയിൽ നിന്നുള്ള ചിലവുകൾ / പർച്ചേസ് (Expenses & Purchases):</span>
+
+      <div class="no-print bg-white p-2.5 sm:p-3 rounded-2xl border-2 border-amber-300 shadow-sm space-y-2">
+        <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center relative">
+          
+          <!-- Unified Party Search -->
+          <div class="flex-1 relative">
+            <input 
+              type="text" 
+              id="expPartyInput" 
+              placeholder="വെണ്ടർ / സ്റ്റാഫ് / ചിലവ് തിരയുക..." 
+              onclick="this.select()"
+              onfocus="showPartyDropdown()"
+              oninput="filterPartyDropdown(this.value)"
+              class="w-full p-2.5 px-3 text-xs sm:text-sm font-black border-2 border-slate-200 rounded-xl outline-none focus:border-amber-500 uppercase uppercase-input" 
+              autocomplete="off"
+            />
+            <div id="partySuggestions" class="absolute left-0 right-0 top-full mt-1 bg-white border-2 border-slate-300 rounded-xl shadow-xl max-h-60 overflow-y-auto z-50 hidden divide-y divide-slate-100"></div>
+          </div>
+
+          <!-- Dual Inputs: Cash First (Primary), Credit Bill (Secondary) -->
+          <div class="flex gap-2 items-center">
+            
+            <!-- Cash Paid from Drawer (Primary Focus) -->
+            <div class="flex-1 sm:w-32">
+              <input 
+                type="number" 
+                step="any" 
+                id="expAmtInput" 
+                placeholder="കൊടുത്ത ക്യാഷ്" 
+                onclick="this.select()"
+                onfocus="this.select()"
+                oninput="updateLiveRemainingPreview()"
+                class="w-full p-2.5 px-2.5 text-xs sm:text-sm font-black border-2 border-slate-200 rounded-xl outline-none focus:border-amber-500 text-right font-mono" 
+                onkeydown="if(event.key === 'Enter') addExpenseRow();"
+              />
+            </div>
+
+            <!-- Credit Purchase Bill Box (Optional / For Credit Vendors) -->
+            <div id="creditBillContainer" class="hidden flex-1 sm:w-28">
+              <input 
+                type="number" 
+                step="any" 
+                id="expCreditBillInput" 
+                placeholder="ക്രെഡിറ്റ് ബിൽ" 
+                onclick="this.select()"
+                onfocus="this.select()"
+                oninput="updateLiveRemainingPreview()"
+                class="w-full p-2.5 px-2 text-xs sm:text-sm font-black border-2 border-blue-300 bg-blue-50/50 rounded-xl outline-none focus:border-blue-500 text-right font-mono text-blue-950" 
+                onkeydown="if(event.key === 'Enter') addExpenseRow();"
+              />
+            </div>
+
+            <button type="button" onclick="addExpenseRow()" class="bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow cursor-pointer whitespace-nowrap">
+              + ചേർക്കുക
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Balance Feedback Badge -->
+        <div id="liveBalanceBadge" class="hidden text-[11px] font-bold bg-amber-50 p-2 rounded-xl border border-amber-200 flex flex-wrap justify-between items-center text-amber-950">
+          <span>നിലവിലെ ബാക്കി: <b id="lblCurrentDue" class="font-mono text-rose-700">0.00</b></span>
+          <span>ഇനി ബാക്കി വരുന്നത്: <b id="lblRemainingDue" class="font-mono text-emerald-700">0.00</b></span>
+        </div>
+      </div>
+
+      <!-- Expenses Table -->
+      <table class="w-full text-left border-collapse print-table bg-white rounded-xl overflow-hidden border border-amber-200">
+        <thead>
+          <tr class="bg-amber-100 text-amber-950 font-black text-[11px] border-b">
+            <th class="p-2 w-8 text-center">#</th>
+            <th class="p-2">ഇനം / വിവരണം</th>
+            <th class="p-2 text-right w-20">ക്രെഡിറ്റ് ബിൽ</th>
+            <th class="p-2 text-right w-24">കൊടുത്ത ക്യാഷ്</th>
+            <th class="p-2 text-right w-24">ബാക്കി കുടിശ്ശിക</th>
+            <th class="p-2 text-center w-8 no-print">✕</th>
+          </tr>
+        </thead>
+        <tbody id="expensesTableBody" class="font-bold text-[11px] divide-y divide-slate-100"></tbody>
+        <tfoot>
+          <tr class="font-black text-[11px] bg-amber-100/70 border-t">
+            <td colspan="3" class="p-2 uppercase text-amber-950">പെട്ടിയിൽ നിന്നുള്ള ആകെ ചിലവ് (Cash Outflow):</td>
+            <td id="displayTotalExpenses" class="p-2 text-right text-amber-900 font-mono text-xs font-black">0.00</td>
+            <td colspan="2" class="no-print"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 2. COUNTER CASH (രണ്ടാമത്)                   -->
+    <!-- ========================================== -->
+    <div class="bg-emerald-50/70 p-3 rounded-2xl border-2 border-emerald-300 print-box flex flex-wrap justify-between items-center gap-2">
+      <span class="font-black text-emerald-950 text-xs sm:text-sm">💵 കൗണ്ടറിലുള്ള ക്യാഷ് (Cash in Drawer):</span>
+      <div class="w-full sm:w-52">
+        <input 
+          type="number" 
+          step="any" 
+          id="counterCash" 
+          placeholder="0.00" 
+          onclick="this.select()"
+          onfocus="this.select()"
+          oninput="calculateTotals();" 
+          class="w-full text-right text-base sm:text-lg font-black p-2.5 px-3 rounded-xl border-2 border-emerald-400 bg-white outline-none focus:ring-2 focus:ring-emerald-600 text-emerald-950 font-mono shadow-sm cursor-pointer" 
+        />
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 3. MADA POS MACHINES (മൂന്നാമത്)             -->
+    <!-- ========================================== -->
+    <div class="bg-blue-50/70 p-3 rounded-2xl border-2 border-blue-300 print-box space-y-2.5">
+      <div class="flex justify-between items-center">
+        <span class="font-black text-blue-950 text-xs sm:text-sm">💳 മദാ കാർഡ് മെഷീനുകൾ (Mada POS LDR):</span>
+        <button type="button" onclick="addMadaMachine()" class="no-print bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-3 py-1.5 rounded-xl shadow transition flex items-center gap-1 cursor-pointer">
+          <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> + മെഷീൻ
+        </button>
+      </div>
+
+      <div id="madaMachinesList" class="space-y-2"></div>
+
+      <div class="flex justify-between items-center pt-2 border-t border-blue-200 text-xs font-black text-blue-950">
+        <span>ആകെ മദാ ബാങ്ക് (Total Mada):</span>
+        <span id="displayTotalMada" class="text-xs sm:text-sm text-blue-900 font-mono font-black">0.00</span>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 4. MANAGER CASH (നാലാമത് - NO OVERFLOW)    -->
+    <!-- ========================================== -->
+    <div class="bg-purple-50/70 p-3 rounded-2xl border-2 border-purple-300 print-box space-y-3">
+      <span class="font-black text-purple-950 text-xs sm:text-sm block">👔 മാനേജർ ക്യാഷ് ഇടപാടുകൾ (Drawer Handover / Float):</span>
+
+      <!-- SECTION A: CASH GIVEN TO MANAGER (മുകളിൽ) -->
+      <div class="bg-white p-2.5 rounded-xl border border-purple-200 space-y-2">
+        <div class="flex justify-between items-center">
+          <span class="font-black text-purple-900 text-xs">📤 മാനേജർക്ക് കൊടുത്തത് (Given to Manager):</span>
+          <span id="displayTotalMgrOut" class="font-mono font-black text-xs text-purple-950">0.00</span>
+        </div>
+        
+        <!-- Responsive Grid to Prevent Overflow -->
+        <div class="no-print grid grid-cols-12 gap-1.5 items-center">
+          <input type="text" id="mgrOutName" placeholder="പേര് / കുറിപ്പ്..." oninput="this.value = this.value.toUpperCase();" class="col-span-6 p-2 px-2.5 text-xs font-bold border rounded-xl outline-none focus:border-purple-500 uppercase uppercase-input min-w-0" />
+          <input type="number" step="any" id="mgrOutAmt" placeholder="തുക" class="col-span-4 p-2 px-2 text-xs font-black border rounded-xl outline-none text-right font-mono min-w-0" onkeydown="if(event.key === 'Enter') addManagerOutRow();" />
+          <button type="button" onclick="addManagerOutRow()" title="ചേർക്കുക" class="col-span-2 bg-purple-700 hover:bg-purple-800 text-white font-black text-xs py-2 rounded-xl shadow cursor-pointer flex items-center justify-center">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+          </button>
+        </div>
+        
+        <div id="mgrOutList" class="space-y-1"></div>
+      </div>
+
+      <!-- SECTION B: CASH RECEIVED FROM MANAGER (അടിയിൽ) -->
+      <div class="bg-white p-2.5 rounded-xl border border-purple-200 space-y-2">
+        <div class="flex justify-between items-center">
+          <span class="font-black text-purple-900 text-xs">📥 മാനേജർ തന്നത് (Received from Manager):</span>
+          <span id="displayTotalMgrIn" class="font-mono font-black text-xs text-purple-950">0.00</span>
+        </div>
+        
+        <!-- Responsive Grid to Prevent Overflow -->
+        <div class="no-print grid grid-cols-12 gap-1.5 items-center">
+          <input type="text" id="mgrInName" placeholder="പേര് / കുറിപ്പ്..." oninput="this.value = this.value.toUpperCase();" class="col-span-6 p-2 px-2.5 text-xs font-bold border rounded-xl outline-none focus:border-purple-500 uppercase uppercase-input min-w-0" />
+          <input type="number" step="any" id="mgrInAmt" placeholder="തുക" class="col-span-4 p-2 px-2 text-xs font-black border rounded-xl outline-none text-right font-mono min-w-0" onkeydown="if(event.key === 'Enter') addManagerInRow();" />
+          <button type="button" onclick="addManagerInRow()" title="ചേർക്കുക" class="col-span-2 bg-purple-700 hover:bg-purple-800 text-white font-black text-xs py-2 rounded-xl shadow cursor-pointer flex items-center justify-center">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+          </button>
+        </div>
+        
+        <div id="mgrInList" class="space-y-1"></div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 5. FINAL SUMMARY                          -->
+    <!-- ========================================== -->
+    <div class="bg-slate-900 text-white p-3.5 sm:p-4 rounded-2xl space-y-2 print-box border border-slate-950 shadow-md">
+      <div class="flex justify-between items-center text-emerald-400 border-b border-slate-800 pb-1.5 text-xs sm:text-sm">
+        <span class="font-bold">1. ടോട്ടൽ ക്യാഷ് സെയിൽ (Cash + Expenses + Mgr):</span>
+        <span id="finalCashSale" class="font-black font-mono text-sm sm:text-base">0.00</span>
+      </div>
+
+      <div class="flex justify-between items-center text-blue-400 border-b border-slate-800 pb-1.5 text-xs sm:text-sm">
+        <span class="font-bold">2. ടോട്ടൽ ബാങ്ക് സെയിൽ (Total Mada POS):</span>
+        <span id="finalBankSale" class="font-black font-mono text-sm sm:text-base">0.00</span>
+      </div>
+
+      <div class="flex justify-between items-center text-amber-400 pt-1 text-sm sm:text-base font-black">
+        <span>⭐ ആകെ കച്ചവടം (GRAND TOTAL SALES):</span>
+        <span id="finalGrandSale" class="font-mono text-base sm:text-lg underline decoration-double">0.00</span>
+      </div>
+    </div>
+
+    <!-- SIGNATURES (PRINT ONLY) -->
+    <div class="pt-6 border-t border-slate-800 justify-between items-end text-[11px] font-black hidden print:flex">
+      <div class="text-center">
+        ...................................................<br>ക്യാഷ്യറുടെ ഒപ്പ്
+      </div>
+      <div class="text-center">
+        ...................................................<br>മാനേജർ ഒപ്പ് (ക്യാഷ് കൈപ്പറ്റി)
+      </div>
+    </div>
+
+    <!-- BOTTOM ACTION BUTTONS -->
+    <div class="no-print flex flex-wrap gap-2 justify-center pt-2 border-t border-slate-200">
+      <button onclick="window.print()" class="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow transition flex items-center gap-1.5 cursor-pointer">
+        <i data-lucide="printer" class="w-3.5 h-3.5"></i> 🖨️ A4 പ്രിന്റ്
+      </button>
+
+      <button onclick="shareWhatsApp()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow transition flex items-center gap-1.5 cursor-pointer">
+        <i data-lucide="share-2" class="w-3.5 h-3.5"></i> 🟢 വാട്‌സ്ആപ്പ്
+      </button>
+
+      <button onclick="submitClosingToCloud()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer">
+        <i data-lucide="check-circle-2" class="w-4 h-4"></i> 💾 സബ്മിറ്റ് ക്ലോസിംഗ്
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 3. HISTORY MODAL (OPTION B)                -->
+  <!-- ========================================== -->
+  <div id="historyModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 hidden">
+    <div class="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="p-4 bg-slate-900 text-white flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <i data-lucide="history" class="w-5 h-5 text-amber-400"></i>
+          <h3 class="font-black text-sm uppercase">പഴയ ക്ലോസിംഗ് റിപ്പോർട്ടുകൾ (History)</h3>
+        </div>
+        <button onclick="closeHistoryModal()" class="text-slate-400 hover:text-white p-1 font-black text-base cursor-pointer">✕</button>
+      </div>
+
+      <div class="p-4 overflow-y-auto space-y-3 flex-1">
+        <div class="flex gap-2 items-center">
+          <label class="font-black text-xs text-slate-700">തീയതി തിരഞ്ഞെടുക്കുക:</label>
+          <input type="date" id="historyDateSelect" onchange="fetchHistoryForDate()" class="p-2 border rounded-xl font-black bg-slate-50 outline-none text-xs flex-1" />
+        </div>
+
+        <div id="historyContent" class="space-y-3 pt-2">
+          <p class="text-center text-slate-400 font-bold py-6">ഒരു തീയതി തിരഞ്ഞെടുക്കുക</p>
+        </div>
+      </div>
+
+      <div class="p-3 bg-slate-100 border-t flex justify-end gap-2">
+        <button onclick="printHistoryReport()" id="btnHistoryPrint" class="hidden px-4 py-2 bg-slate-900 text-white font-black text-xs rounded-xl cursor-pointer">🖨️ പ്രിന്റ്</button>
+        <button onclick="closeHistoryModal()" class="px-4 py-2 bg-slate-300 hover:bg-slate-400 text-slate-800 font-black text-xs rounded-xl cursor-pointer">അടയ്ക്കുക</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // SAUDI BUSINESS DATE (8:00 AM CUT-OFF SYNC)
+    // ==========================================
+    function getSaudiBusinessDate() {
+      try {
+        const now = new Date();
+        const saudiTime = new Date(now.getTime() + (now.getTimezoneOffset() + 180) * 60000);
+        if (saudiTime.getHours() < 8) {
+          saudiTime.setDate(saudiTime.getDate() - 1);
+        }
+        const y = saudiTime.getFullYear();
+        const m = String(saudiTime.getMonth() + 1).padStart(2, '0');
+        const d = String(saudiTime.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      } catch(e) {
+        return new Date().toISOString().split('T')[0];
+      }
+    }
+
+    // PWA REGISTRATION
+    var deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const btn = document.getElementById("pwaInstallBtn");
+      if (btn) btn.classList.remove("hidden");
+    });
+    function triggerPwaInstall() {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(() => { deferredPrompt = null; });
+    }
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('closing-sw.js').catch(() => {});
+    }
+
+    // STATE VARIABLES
+    var currentShop = null;
+    var supabaseClient = null;
+    var userRole = 'shop';
+    var masterPartyCache = [];
+    var selectedPartyObject = null;
+    var currentHistoryData = null;
+
+    var closingState = {
+      date: getSaudiBusinessDate(),
+      counterCash: 0,
+      managerCashOutList: [],
+      managerCashInList: [],
+      madaMachines: [{ label: "മെഷീൻ 1 (MADA 1)", amount: 0 }],
+      expenses: []
+    };
+
+    function getShopsList() {
+      if (window.SHOPS_CONFIG && Array.isArray(window.SHOPS_CONFIG) && window.SHOPS_CONFIG.length > 0) return window.SHOPS_CONFIG;
+      if (window.SHOPS && Array.isArray(window.SHOPS) && window.SHOPS.length > 0) return window.SHOPS;
+      return [];
+    }
+
+    function getMasterPin() {
+      if (window.MASTER_PIN !== undefined && window.MASTER_PIN !== null) return String(window.MASTER_PIN).trim();
+      return "0000";
+    }
+
+    // LOGIN
+    function verifyLogin() {
+      const pinInput = document.getElementById("loginPinInput");
+      const enteredPin = String(pinInput.value || '').trim();
+      if (!enteredPin) return alert("പിൻ നമ്പർ നൽകുക!");
+
+      const masterPin = getMasterPin();
+      const shops = getShopsList();
+      const isMaster = (masterPin && enteredPin === masterPin);
+      const matchedShop = (shops || []).find(s => String(s.pin).trim() === enteredPin);
+
+      if (!isMaster && !matchedShop) {
+        alert("പിൻ തെറ്റാണ്!");
+        pinInput.value = "";
+        pinInput.focus();
+        return;
+      }
+
+      sessionStorage.setItem("ALNASSR_CLOSING_LOGGED_IN", "true");
+      if (isMaster) {
+        sessionStorage.setItem("ALNASSR_CLOSING_ROLE", "admin");
+        userRole = 'admin';
+      } else {
+        sessionStorage.setItem("ALNASSR_CLOSING_ROLE", "shop");
+        sessionStorage.setItem("ALNASSR_CLOSING_SHOP_ID", matchedShop.id);
+        userRole = 'shop';
+      }
+
+      pinInput.value = "";
+      checkLoginState();
+    }
+
+    function checkLoginState() {
+      const isLogged = sessionStorage.getItem("ALNASSR_CLOSING_LOGGED_IN") === "true";
+      const loginEl = document.getElementById("loginScreen");
+      const appEl = document.getElementById("appContainer");
+
+      if (isLogged) {
+        loginEl.classList.add("hidden");
+        appEl.classList.remove("hidden");
+        userRole = sessionStorage.getItem("ALNASSR_CLOSING_ROLE") || 'shop';
+        initShops();
+      } else {
+        loginEl.classList.remove("hidden");
+        appEl.classList.add("hidden");
+        setTimeout(() => {
+          const inp = document.getElementById("loginPinInput");
+          if (inp) inp.focus();
+        }, 150);
+      }
+    }
+
+    function logoutApp() {
+      sessionStorage.removeItem("ALNASSR_CLOSING_LOGGED_IN");
+      sessionStorage.removeItem("ALNASSR_CLOSING_ROLE");
+      sessionStorage.removeItem("ALNASSR_CLOSING_SHOP_ID");
+      checkLoginState();
+    }
+
+    // INIT SHOP & SUPABASE
+    function initShops() {
+      const shops = getShopsList();
+      const sel = document.getElementById("shopSelector");
+      const badge = document.getElementById("shopFixedBadge");
+      sel.innerHTML = "";
+
+      if (shops.length === 0) {
+        sel.innerHTML = `<option value="default">Default Shop</option>`;
+        currentShop = { id: 'default', name: 'ALNASSR' };
+      } else if (userRole === 'admin') {
+        sel.classList.remove("hidden");
+        badge.classList.add("hidden");
+        shops.forEach(s => {
+          const opt = document.createElement("option");
+          opt.value = s.id;
+          opt.textContent = s.name;
+          sel.appendChild(opt);
+        });
+        const savedShopId = localStorage.getItem("ALNASSR_SELECTED_SHOP_ID") || shops[0].id;
+        sel.value = savedShopId;
+        currentShop = shops.find(s => s.id === sel.value) || shops[0];
+      } else {
+        const activeShopId = sessionStorage.getItem("ALNASSR_CLOSING_SHOP_ID");
+        currentShop = shops.find(s => s.id === activeShopId) || shops[0];
+        sel.classList.add("hidden");
+        badge.classList.remove("hidden");
+        badge.innerText = currentShop.name;
+      }
+
+      applyShopDetails();
+      initSupabaseClient();
+    }
+
+    function onShopChange() {
+      const shops = getShopsList();
+      const sel = document.getElementById("shopSelector");
+      currentShop = shops.find(s => s.id === sel.value) || { id: sel.value, name: sel.value };
+      localStorage.setItem("ALNASSR_SELECTED_SHOP_ID", currentShop.id);
+      applyShopDetails();
+      initSupabaseClient();
+    }
+
+    function applyShopDetails() {
+      document.getElementById("shopTitle").innerText = (currentShop.name || 'ALNASSR').toUpperCase();
+      const logoEl = document.getElementById("shopLogo");
+      if (currentShop.logo) {
+        logoEl.src = currentShop.logo;
+        logoEl.classList.remove("hidden");
+      } else {
+        logoEl.classList.add("hidden");
+      }
+    }
+
+    function initSupabaseClient() {
+      if (currentShop && currentShop.url && currentShop.key && window.supabase) {
+        supabaseClient = window.supabase.createClient(currentShop.url, currentShop.key);
+      } else {
+        supabaseClient = null;
+      }
+      fetchMasterPartiesWithBalances();
+      resetFormToFresh();
+    }
+
+    // ACCURATE TENURE PAYROLL & VENDOR BALANCE FETCH
+    async function fetchMasterPartiesWithBalances() {
+      masterPartyCache = [];
+      if (!supabaseClient) return;
+
+      try {
+        const [vendRes, empRes, expRes, txRes] = await Promise.all([
+          supabaseClient.from('vendors').select('*'),
+          supabaseClient.from('employees').select('*'),
+          supabaseClient.from('expenses_master').select('*'),
+          supabaseClient.from('transactions').select('*')
+        ]);
+
+        const vendors = vendRes.data || [];
+        const employees = empRes.data || [];
+        const expenses = expRes.data || [];
+        const transactions = txRes.data || [];
+
+        // 1. Vendors (Strict Cash vs Credit)
+        vendors.forEach(v => {
+          const vName = (v.name || '').trim().toUpperCase();
+          const vType = (v.type || 'credit').toLowerCase();
+          let due = parseFloat(v.opening_balance) || 0;
+
+          if (vType === 'credit') {
+            transactions.forEach(t => {
+              if (t && t.type === 'purchase' && (t.party_name || '').trim().toUpperCase() === vName) {
+                const cr = parseFloat(t.credit_amount) || 0;
+                const ca = Math.abs(parseFloat(t.cash_amount) || 0);
+                const ba = Math.abs(parseFloat(t.bank_amount) || 0);
+                due += (cr - ca - ba);
+              }
+            });
+          }
+
+          masterPartyCache.push({
+            name: vName,
+            type: 'vendor',
+            vendorType: vType,
+            label: `[VENDOR] ${vName} (${vType === 'cash' ? 'CASH' : 'CREDIT'})`,
+            due: vType === 'cash' ? 0 : Math.max(0, due)
+          });
+        });
+
+        // 2. Employees: Tenure Payroll Logic
+        const curClosingDate = new Date(document.getElementById("closingDate").value || getSaudiBusinessDate());
+        employees.forEach(em => {
+          if (em.status === 'stopped') return;
+          const emName = (em.name || '').trim().toUpperCase();
+          const monthlySalary = parseFloat(em.monthly_salary) || 0;
+          const openingBal = parseFloat(em.opening_balance) || 0;
+
+          let accruedSalary = 0;
+          if (em.join_date) {
+            const join = new Date(em.join_date);
+            let months = (curClosingDate.getFullYear() - join.getFullYear()) * 12 + (curClosingDate.getMonth() - join.getMonth());
+            if (curClosingDate.getDate() >= join.getDate()) months += 1;
+            months = Math.max(0, months);
+            accruedSalary = months * monthlySalary;
+          } else {
+            accruedSalary = monthlySalary;
+          }
+
+          let paid = 0;
+          transactions.forEach(t => {
+            if (t && t.type === 'salary' && (t.party_name || '').toUpperCase().includes(emName)) {
+              paid += (Math.abs(parseFloat(t.cash_amount) || 0) + Math.abs(parseFloat(t.bank_amount) || 0));
+            }
+          });
+
+          const netBalance = (openingBal + accruedSalary) - paid;
+          masterPartyCache.push({
+            name: emName,
+            type: 'employee',
+            label: `[STAFF] ${emName}`,
+            due: netBalance
+          });
+        });
+
+        // 3. Fixed / Monthly Payable Expenses Master
+        expenses.forEach(ex => {
+          const exName = (ex.name || '').trim().toUpperCase();
+          let due = parseFloat(ex.opening_balance) || 0;
+          transactions.forEach(t => {
+            if (t && (t.party_name || '').toUpperCase().startsWith(exName)) {
+              const bill = (t.type === 'expense_bill') ? (parseFloat(t.credit_amount) || 0) : 0;
+              const paid = (t.type === 'expense') ? (Math.abs(parseFloat(t.cash_amount) || 0) + Math.abs(parseFloat(t.bank_amount) || 0)) : 0;
+              due += (bill - paid);
+            }
+          });
+          masterPartyCache.push({
+            name: exName,
+            type: 'expense_fixed',
+            label: `[EXPENSE] ${exName}`,
+            due: Math.max(0, due)
+          });
+        });
+
+      } catch (err) {
+        console.warn("Could not fetch master parties:", err);
+      }
+    }
+
+    // ==========================================
+    // MANAGER TRANSACTIONS
+    // ==========================================
+    function addManagerOutRow() {
+      const nameInp = document.getElementById("mgrOutName");
+      const amtInp = document.getElementById("mgrOutAmt");
+      const name = nameInp.value.trim().toUpperCase() || "MANAGE OUT";
+      const amt = parseFloat(amtInp.value) || 0;
+      if (amt <= 0) return alert("തുക നൽകുക!");
+
+      closingState.managerCashOutList.push({ name: name, amount: amt });
+      nameInp.value = "";
+      amtInp.value = "";
+      renderManagerOutList();
+      calculateTotals();
+    }
+
+    function removeManagerOutRow(idx) {
+      closingState.managerCashOutList.splice(idx, 1);
+      renderManagerOutList();
+      calculateTotals();
+    }
+
+    function renderManagerOutList() {
+      const container = document.getElementById("mgrOutList");
+      container.innerHTML = "";
+      let total = 0;
+      closingState.managerCashOutList.forEach((item, idx) => {
+        total += item.amount;
+        const row = document.createElement("div");
+        row.className = "flex justify-between items-center text-xs p-1.5 px-2 bg-purple-50 rounded-lg border border-purple-200 font-bold";
+        row.innerHTML = `
+          <span class="text-purple-950">${item.name}</span>
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-purple-900 font-black">${item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            <button onclick="removeManagerOutRow(${idx})" class="text-rose-500 font-black hover:text-rose-700">✕</button>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+      document.getElementById("displayTotalMgrOut").innerText = total.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    }
+
+    function addManagerInRow() {
+      const nameInp = document.getElementById("mgrInName");
+      const amtInp = document.getElementById("mgrInAmt");
+      const name = nameInp.value.trim().toUpperCase() || "MANAGE IN";
+      const amt = parseFloat(amtInp.value) || 0;
+      if (amt <= 0) return alert("തുക നൽകുക!");
+
+      closingState.managerCashInList.push({ name: name, amount: amt });
+      nameInp.value = "";
+      amtInp.value = "";
+      renderManagerInList();
+      calculateTotals();
+    }
+
+    function removeManagerInRow(idx) {
+      closingState.managerCashInList.splice(idx, 1);
+      renderManagerInList();
+      calculateTotals();
+    }
+
+    function renderManagerInList() {
+      const container = document.getElementById("mgrInList");
+      container.innerHTML = "";
+      let total = 0;
+      closingState.managerCashInList.forEach((item, idx) => {
+        total += item.amount;
+        const row = document.createElement("div");
+        row.className = "flex justify-between items-center text-xs p-1.5 px-2 bg-purple-50 rounded-lg border border-purple-200 font-bold";
+        row.innerHTML = `
+          <span class="text-purple-950">${item.name}</span>
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-purple-900 font-black">${item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            <button onclick="removeManagerInRow(${idx})" class="text-rose-500 font-black hover:text-rose-700">✕</button>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+      document.getElementById("displayTotalMgrIn").innerText = total.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    }
+
+    // ==========================================
+    // EXPENSE / PURCHASE DROPDOWN
+    // ==========================================
+    function showPartyDropdown() {
+      filterPartyDropdown(document.getElementById("expPartyInput").value);
+    }
+
+    function filterPartyDropdown(query) {
+      const q = (query || '').trim().toUpperCase();
+      const popup = document.getElementById("partySuggestions");
+      popup.innerHTML = "";
+
+      const filtered = masterPartyCache.filter(p => p.name.includes(q) || p.label.includes(q));
+
+      filtered.slice(0, 15).forEach(p => {
+        const item = document.createElement("div");
+        item.className = "p-2.5 px-3 hover:bg-slate-100 cursor-pointer flex justify-between items-center text-xs font-bold";
+        
+        let dueDisplay = '';
+        if (p.vendorType === 'credit' || p.type === 'employee' || (p.type === 'expense_fixed' && p.due > 0)) {
+          dueDisplay = `<span class="text-[11px] font-mono ${p.due < 0 ? 'text-amber-700' : 'text-rose-700'} font-black">
+            ${p.due < 0 ? 'അഡ്വാൻസ്: ' + Math.abs(p.due).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : 'ബാക്കി: ' + p.due.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </span>`;
+        } else {
+          dueDisplay = `<span class="text-[11px] font-mono text-slate-400 font-bold">-</span>`;
+        }
+
+        item.innerHTML = `
+          <span class="text-slate-900">${p.label}</span>
+          ${dueDisplay}
+        `;
+        item.onmousedown = () => selectParty(p);
+        popup.appendChild(item);
+      });
+
+      // Options for New Names
+      if (q.length > 0) {
+        const hasExactMatch = masterPartyCache.some(p => p.name === q);
+        if (!hasExactMatch) {
+          const addCashVendOption = document.createElement("div");
+          addCashVendOption.className = "p-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-black cursor-pointer flex justify-between items-center text-xs border-t border-emerald-200";
+          addCashVendOption.innerHTML = `
+            <span>📦 "${q}" - [CASH VENDOR] ക്യാഷ് പർച്ചേസ്</span>
+            <span class="text-[10px] bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">ക്യാഷ് പർച്ചേസ്</span>
+          `;
+          addCashVendOption.onmousedown = () => selectParty({ name: q, type: 'vendor', vendorType: 'cash', label: `[VENDOR] ${q} (CASH)`, due: 0, isNewVendor: true });
+          popup.appendChild(addCashVendOption);
+
+          const addExpOption = document.createElement("div");
+          addExpOption.className = "p-2.5 px-3 bg-amber-50 hover:bg-amber-100 text-amber-950 font-black cursor-pointer flex justify-between items-center text-xs border-t border-amber-200";
+          addExpOption.innerHTML = `
+            <span>⚡ "${q}" - [EXPENSE] ചിലവായി ചേർക്കുക</span>
+            <span class="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded">നിത്യചിലവ്</span>
+          `;
+          addExpOption.onmousedown = () => selectParty({ name: q, type: 'regular_expense', label: `[EXPENSE] ${q}`, due: 0, isNewExpense: true });
+          popup.appendChild(addExpOption);
+        }
+      }
+
+      if (filtered.length === 0 && q.length === 0) {
+        popup.classList.add("hidden");
+        return;
+      }
+      popup.classList.remove("hidden");
+    }
+
+    function selectParty(party) {
+      selectedPartyObject = party;
+      const inp = document.getElementById("expPartyInput");
+      inp.value = party.name;
+      document.getElementById("partySuggestions").classList.add("hidden");
+
+      const creditContainer = document.getElementById("creditBillContainer");
+      const amtInput = document.getElementById("expAmtInput");
+      const creditBillInput = document.getElementById("expCreditBillInput");
+
+      // SHOW DUAL INPUT FOR EXISTING CREDIT VENDORS - CASH IS PRIMARY
+      if (party.type === 'vendor' && party.vendorType === 'credit') {
+        creditContainer.classList.remove("hidden");
+        amtInput.placeholder = "💵 കൊടുത്ത ക്യാഷ്";
+        creditBillInput.value = "";
+        setTimeout(() => amtInput.focus(), 50);
+      } else {
+        creditContainer.classList.add("hidden");
+        creditBillInput.value = "";
+        amtInput.placeholder = (party.type === 'vendor') ? "പർച്ചേസ് തുക" : "തുക";
+        setTimeout(() => amtInput.focus(), 50);
+      }
+
+      updateLiveRemainingPreview();
+    }
+
+    function updateLiveRemainingPreview() {
+      const badge = document.getElementById("liveBalanceBadge");
+      if (!selectedPartyObject) {
+        badge.classList.add("hidden");
+        return;
+      }
+
+      // ONLY SHOW LIVE DUE FOR CREDIT VENDORS, EMPLOYEES & FIXED EXPENSES WITH DUE
+      const hasActualBalance = (selectedPartyObject.vendorType === 'credit') || 
+                               (selectedPartyObject.type === 'employee') || 
+                               (selectedPartyObject.type === 'expense_fixed' && selectedPartyObject.due > 0);
+
+      if (!hasActualBalance) {
+        badge.classList.add("hidden");
+        return;
+      }
+
+      badge.classList.remove("hidden");
+      document.getElementById("lblCurrentDue").innerText = (selectedPartyObject.due || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+      const creditBill = parseFloat(document.getElementById("expCreditBillInput").value) || 0;
+      const cashPaid = parseFloat(document.getElementById("expAmtInput").value) || 0;
+
+      let rem = (selectedPartyObject.due || 0);
+      if (selectedPartyObject.type === 'vendor' && selectedPartyObject.vendorType === 'credit') {
+        rem = rem + creditBill - cashPaid;
+      } else {
+        rem = rem - cashPaid;
+      }
+      document.getElementById("lblRemainingDue").innerText = rem.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    }
+
+    document.addEventListener("click", (e) => {
+      const popup = document.getElementById("partySuggestions");
+      const inp = document.getElementById("expPartyInput");
+      if (e.target !== inp && !popup.contains(e.target)) {
+        popup.classList.add("hidden");
+      }
+    });
+
+    // MADA POS
+    function renderMadaMachines() {
+      const container = document.getElementById("madaMachinesList");
+      container.innerHTML = "";
+      closingState.madaMachines.forEach((m, idx) => {
+        const row = document.createElement("div");
+        row.className = "flex items-center gap-2";
+        row.innerHTML = `
+          <input 
+            type="text" 
+            value="${m.label}" 
+            onclick="this.select()"
+            onfocus="this.select()"
+            oninput="this.value = this.value.toUpperCase(); closingState.madaMachines[${idx}].label = this.value;" 
+            class="flex-1 p-2 sm:p-2.5 px-3 text-xs sm:text-sm font-black border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-500 uppercase uppercase-input" 
+          />
+          <input 
+            type="number" 
+            step="any" 
+            value="${m.amount || ''}" 
+            placeholder="0.00" 
+            onclick="this.select()"
+            onfocus="this.select()"
+            oninput="closingState.madaMachines[${idx}].amount = parseFloat(this.value) || 0; calculateTotals();" 
+            class="w-32 sm:w-36 p-2 sm:p-2.5 px-3 text-xs sm:text-sm font-black border-2 border-slate-200 rounded-xl bg-white outline-none focus:border-blue-500 text-right font-mono" 
+          />
+          ${closingState.madaMachines.length > 1 ? `
+            <button type="button" onclick="removeMadaMachine(${idx})" class="no-print text-rose-500 hover:text-rose-700 p-2 font-black cursor-pointer text-sm">✕</button>
+          ` : `<div class="w-6 no-print"></div>`}
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function addMadaMachine() {
+      const num = closingState.madaMachines.length + 1;
+      closingState.madaMachines.push({ label: `മെഷീൻ ${num} (MADA ${num})`, amount: 0 });
+      renderMadaMachines();
+      calculateTotals();
+    }
+
+    function removeMadaMachine(idx) {
+      closingState.madaMachines.splice(idx, 1);
+      renderMadaMachines();
+      calculateTotals();
+    }
+
+    // EXPENSES TABLE (STRICTLY NO MINUS ON CASH VENDORS / PETTY EXPENSES)
+    function renderExpensesTable() {
+      const tbody = document.getElementById("expensesTableBody");
+      tbody.innerHTML = "";
+      if (closingState.expenses.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-3 text-center text-slate-400 font-bold">ചിലവുകൾ ഇല്ല</td></tr>`;
+        return;
+      }
+      closingState.expenses.forEach((item, idx) => {
+        const tr = document.createElement("tr");
+        const creditBillDisp = item.credit_bill > 0 ? item.credit_bill.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-';
+        
+        // STRICT CHECK: IF NULL, DISPLAY DASH (-) NEVER A NEGATIVE NUMBER!
+        const remDisp = (item.remaining_due !== null && item.remaining_due !== undefined) 
+          ? item.remaining_due.toLocaleString('en-IN', { minimumFractionDigits: 2 }) 
+          : '-';
+
+        tr.innerHTML = `
+          <td class="p-2 text-center text-slate-500">${idx + 1}</td>
+          <td class="p-2 font-black text-slate-900">${item.desc}</td>
+          <td class="p-2 text-right font-mono text-blue-900 font-bold">${creditBillDisp}</td>
+          <td class="p-2 text-right font-black text-amber-950 font-mono">${item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+          <td class="p-2 text-right font-mono text-slate-600 font-bold">${remDisp}</td>
+          <td class="p-2 text-center no-print"><button onclick="removeExpenseRow(${idx})" title="ഈ വരി ഒഴിവാക്കുക" class="text-rose-500 hover:text-rose-700 font-black cursor-pointer p-1">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function addExpenseRow() {
+      const partyInp = document.getElementById("expPartyInput");
+      const amtInp = document.getElementById("expAmtInput");
+      const creditBillInp = document.getElementById("expCreditBillInput");
+
+      const desc = partyInp.value.trim().toUpperCase();
+      const cashPaid = parseFloat(amtInp.value) || 0;
+      const creditBill = parseFloat(creditBillInp.value) || 0;
+
+      if (!desc) return alert("വിവരണം നൽകുക!");
+      if (cashPaid <= 0 && creditBill <= 0) return alert("തുക നൽകുക!");
+
+      const type = selectedPartyObject ? selectedPartyObject.type : 'regular_expense';
+      const vendorType = selectedPartyObject ? (selectedPartyObject.vendorType || 'cash') : 'cash';
+      const due = selectedPartyObject ? (selectedPartyObject.due || 0) : 0;
+      const isNewV = selectedPartyObject ? !!selectedPartyObject.isNewVendor : false;
+      const isNewE = selectedPartyObject ? !!selectedPartyObject.isNewExpense : false;
+
+      // STRICT LOGIC: ONLY CREDIT VENDORS / STAFF / FIXED EXPENSES HAVE REMAINING DUE!
+      let rem = null;
+      if (type === 'vendor') {
+        if (vendorType === 'credit') {
+          rem = due + creditBill - cashPaid;
+        } else {
+          rem = null; // Cash vendor has no due!
+        }
+      } else if (type === 'employee') {
+        rem = due - cashPaid;
+      } else if (type === 'expense_fixed' && due > 0) {
+        rem = due - cashPaid;
+      } else {
+        rem = null; // Petty/regular expense has no due!
+      }
+
+      closingState.expenses.push({
+        desc: desc,
+        amount: cashPaid,
+        credit_bill: creditBill,
+        type: type,
+        vendorType: vendorType,
+        initial_due: due,
+        remaining_due: rem,
+        isNewVendor: isNewV,
+        isNewExpense: isNewE
+      });
+
+      partyInp.value = "";
+      amtInp.value = "";
+      creditBillInp.value = "";
+      document.getElementById("creditBillContainer").classList.add("hidden");
+      amtInp.placeholder = "കൊടുത്ത ക്യാഷ്";
+      selectedPartyObject = null;
+      document.getElementById("liveBalanceBadge").classList.add("hidden");
+      partyInp.focus();
+
+      renderExpensesTable();
+      calculateTotals();
+    }
+
+    function removeExpenseRow(idx) {
+      closingState.expenses.splice(idx, 1);
+      renderExpensesTable();
+      calculateTotals();
+    }
+
+    // CALCULATE TOTALS
+    function calculateTotals() {
+      const counterCash = parseFloat(document.getElementById("counterCash").value) || 0;
+      
+      let managerOut = 0;
+      closingState.managerCashOutList.forEach(m => managerOut += (m.amount || 0));
+
+      let managerIn = 0;
+      closingState.managerCashInList.forEach(m => managerIn += (m.amount || 0));
+
+      let totalMada = 0;
+      closingState.madaMachines.forEach(m => totalMada += (m.amount || 0));
+
+      let totalExpenses = 0;
+      closingState.expenses.forEach(e => totalExpenses += (e.amount || 0));
+
+      const totalCashSale = Math.max(0, (counterCash + managerOut - managerIn + totalExpenses));
+      const grandTotal = totalCashSale + totalMada;
+
+      document.getElementById("displayTotalMada").innerText = totalMada.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      document.getElementById("displayTotalExpenses").innerText = totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+      document.getElementById("finalCashSale").innerText = totalCashSale.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      document.getElementById("finalBankSale").innerText = totalMada.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      document.getElementById("finalGrandSale").innerText = grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    }
+
+    // RESET TO FRESH STATE
+    function resetFormToFresh() {
+      const activeDate = getSaudiBusinessDate();
+      document.getElementById("closingDate").value = activeDate;
+      document.getElementById("printDateDisplay").innerText = `തീയതി: ${activeDate}`;
+
+      closingState = {
+        date: activeDate,
+        counterCash: 0,
+        managerCashOutList: [],
+        managerCashInList: [],
+        madaMachines: [{ label: "മെഷീൻ 1 (MADA 1)", amount: 0 }],
+        expenses: []
+      };
+
+      document.getElementById("counterCash").value = "";
+      document.getElementById("mgrOutName").value = "";
+      document.getElementById("mgrOutAmt").value = "";
+      document.getElementById("mgrInName").value = "";
+      document.getElementById("mgrInAmt").value = "";
+      document.getElementById("expPartyInput").value = "";
+      document.getElementById("expAmtInput").value = "";
+      document.getElementById("expCreditBillInput").value = "";
+      document.getElementById("creditBillContainer").classList.add("hidden");
+      selectedPartyObject = null;
+      document.getElementById("liveBalanceBadge").classList.add("hidden");
+
+      renderManagerOutList();
+      renderManagerInList();
+      renderMadaMachines();
+      renderExpensesTable();
+      calculateTotals();
+    }
+
+    function onDateChanged() {
+      const d = document.getElementById("closingDate").value;
+      document.getElementById("printDateDisplay").innerText = `തീയതി: ${d}`;
+      fetchMasterPartiesWithBalances();
+    }
+
+    // ==========================================
+    // SUBMIT TO CLOUD & COMPLETE CLEAN SLATE RESET
+    // ==========================================
+    async function submitClosingToCloud() {
+      const selectedDate = document.getElementById("closingDate").value;
+      const counterCash = parseFloat(document.getElementById("counterCash").value) || 0;
+
+      let managerOut = 0;
+      closingState.managerCashOutList.forEach(m => managerOut += m.amount);
+      let managerIn = 0;
+      closingState.managerCashInList.forEach(m => managerIn += m.amount);
+
+      let totalMada = 0;
+      closingState.madaMachines.forEach(m => totalMada += (m.amount || 0));
+      let totalExpenses = 0;
+      closingState.expenses.forEach(e => totalExpenses += (e.amount || 0));
+
+      const totalCashSale = Math.max(0, (counterCash + managerOut - managerIn + totalExpenses));
+      const grandTotal = totalCashSale + totalMada;
+
+      if (grandTotal <= 0 && closingState.expenses.length === 0) {
+        return alert("വിവരങ്ങൾ ഒന്നും രേഖപ്പെടുത്തിയിട്ടില്ല!");
+      }
+
+      if (!confirm(`⚠️ ${selectedDate} തീയതിയിലെ ക്ലോസിംഗ് സ്ഥിരീകരിച്ച് ക്ലൗഡിലേക്ക് പോസ്റ്റ് ചെയ്യണമോ?`)) {
+        return;
+      }
+
+      if (!supabaseClient) return alert("ഡാറ്റാബേസ് കണക്ഷൻ ലഭ്യമല്ല!");
+
+      try {
+        // 1. Auto-create new cash vendors & expenses
+        for (const exp of closingState.expenses) {
+          if (exp.type === 'vendor' && exp.isNewVendor) {
+            try {
+              const { data: vCheck } = await supabaseClient.from('vendors').select('id').eq('name', exp.desc).maybeSingle();
+              if (!vCheck) {
+                await supabaseClient.from('vendors').insert([{ name: exp.desc, type: 'cash', opening_balance: 0 }]);
+              }
+            } catch (vErr) {}
+          }
+          if (exp.type === 'regular_expense' && exp.isNewExpense) {
+            try {
+              const { data: eCheck } = await supabaseClient.from('expenses_master').select('id').eq('name', exp.desc).maybeSingle();
+              if (!eCheck) {
+                await supabaseClient.from('expenses_master').insert([{ name: exp.desc, opening_balance: 0 }]);
+              }
+            } catch (eErr) {}
+          }
+        }
+
+        // 2. Upsert daily_closings
+        const closingPayload = {
+          date: selectedDate,
+          counter_cash: counterCash,
+          manager_cash_out: managerOut,
+          manager_cash_in: managerIn,
+          manager_cash_out_list: closingState.managerCashOutList,
+          manager_cash_in_list: closingState.managerCashInList,
+          mada_machines: closingState.madaMachines,
+          expenses_list: closingState.expenses,
+          total_cash_sale: totalCashSale,
+          total_bank_sale: totalMada,
+          grand_total: grandTotal,
+          submitted_by: userRole === 'admin' ? 'admin' : (currentShop.name || 'cashier')
+        };
+
+        const { error: closeErr } = await supabaseClient
+          .from('daily_closings')
+          .upsert(closingPayload, { onConflict: 'date' });
+
+        if (closeErr) throw closeErr;
+
+        // 3. Clear existing batch transactions for date
+        await supabaseClient.from('transactions').delete().eq('date', selectedDate).eq('closing_ref', `CLOSING_${selectedDate}`);
+        await supabaseClient.from('transactions').delete().eq('date', selectedDate).in('party_name', ['DAILY CASH SALE (CLOSING)', 'MADA CARD SALE (CLOSING)']);
+
+        // 4. Post Transactions to Main Ledger
+        let batchTx = [];
+        const closingRefTag = `CLOSING_${selectedDate}`;
+
+        if (totalCashSale > 0) {
+          batchTx.push({
+            date: selectedDate,
+            type: 'sale',
+            party_name: 'DAILY CASH SALE (CLOSING)',
+            cash_amount: totalCashSale,
+            bank_amount: 0,
+            credit_amount: 0,
+            closing_ref: closingRefTag
+          });
+        }
+
+        if (totalMada > 0) {
+          batchTx.push({
+            date: selectedDate,
+            type: 'sale',
+            party_name: 'MADA CARD SALE (CLOSING)',
+            cash_amount: 0,
+            bank_amount: totalMada,
+            credit_amount: 0,
+            closing_ref: closingRefTag
+          });
+        }
+
+        closingState.expenses.forEach(exp => {
+          if (exp.type === 'vendor') {
+            if (exp.vendorType === 'credit') {
+              if (exp.credit_bill > 0) {
+                batchTx.push({
+                  date: selectedDate,
+                  type: 'purchase',
+                  party_name: exp.desc,
+                  credit_amount: Math.abs(exp.credit_bill),
+                  cash_amount: 0,
+                  bank_amount: 0,
+                  closing_ref: closingRefTag
+                });
+              }
+              if (exp.amount > 0) {
+                batchTx.push({
+                  date: selectedDate,
+                  type: 'purchase',
+                  party_name: exp.desc,
+                  credit_amount: 0,
+                  cash_amount: -Math.abs(exp.amount),
+                  bank_amount: 0,
+                  closing_ref: closingRefTag
+                });
+              }
+            } else {
+              batchTx.push({
+                date: selectedDate,
+                type: 'purchase',
+                party_name: exp.desc,
+                credit_amount: Math.abs(exp.amount),
+                cash_amount: -Math.abs(exp.amount),
+                bank_amount: 0,
+                closing_ref: closingRefTag
+              });
+            }
+          } else if (exp.type === 'employee') {
+            batchTx.push({
+              date: selectedDate,
+              type: 'salary',
+              party_name: `Staff: ${exp.desc}`,
+              credit_amount: 0,
+              cash_amount: -Math.abs(exp.amount),
+              bank_amount: 0,
+              closing_ref: closingRefTag
+            });
+          } else {
+            batchTx.push({
+              date: selectedDate,
+              type: 'expense',
+              party_name: exp.desc,
+              credit_amount: 0,
+              cash_amount: -Math.abs(exp.amount),
+              bank_amount: 0,
+              closing_ref: closingRefTag
+            });
+          }
+        });
+
+        if (batchTx.length > 0) {
+          const { error: txErr } = await supabaseClient.from('transactions').insert(batchTx);
+          if (txErr) throw txErr;
+        }
+
+        alert("🎉 ക്ലോസിംഗ് വിജയകരമായി സബ്മിറ്റ് ചെയ്തു! സ്ക്രീൻ ക്ലീൻ ചെയ്തു.");
+        resetFormToFresh();
+        fetchMasterPartiesWithBalances();
+
+      } catch (err) {
+        alert("സബ്മിറ്റ് പിശക്: " + err.message);
+      }
+    }
+
+    // ==========================================
+    // OPTION B: HISTORY MODAL LOGIC (READ-ONLY)
+    // ==========================================
+    function openHistoryModal() {
+      document.getElementById("historyModal").classList.remove("hidden");
+      document.getElementById("historyDateSelect").value = getSaudiBusinessDate();
+      fetchHistoryForDate();
+    }
+
+    function closeHistoryModal() {
+      document.getElementById("historyModal").classList.add("hidden");
+    }
+
+    async function fetchHistoryForDate() {
+      const dt = document.getElementById("historyDateSelect").value;
+      const content = document.getElementById("historyContent");
+      const printBtn = document.getElementById("btnHistoryPrint");
+      content.innerHTML = `<p class="text-center text-slate-500 py-4 font-bold">വിവരങ്ങൾ പരിശോധിക്കുന്നു...</p>`;
+      printBtn.classList.add("hidden");
+
+      if (!supabaseClient) {
+        content.innerHTML = `<p class="text-center text-rose-500 py-4 font-bold">ഡാറ്റാബേസ് കണക്ഷൻ ലഭ്യമല്ല!</p>`;
+        return;
+      }
+
+      try {
+        const { data, error } = await supabaseClient
+          .from('daily_closings')
+          .select('*')
+          .eq('date', dt)
+          .maybeSingle();
+
+        if (error || !data) {
+          content.innerHTML = `<p class="text-center text-slate-400 py-8 font-bold">ഈ തീയതിയിൽ (${dt}) ക്ലോസിംഗ് റെക്കോർഡുകൾ ഒന്നും ലഭ്യമല്ല.</p>`;
+          currentHistoryData = null;
+          return;
+        }
+
+        currentHistoryData = data;
+        printBtn.classList.remove("hidden");
+
+        const madaList = Array.isArray(data.mada_machines) ? data.mada_machines : [];
+        const expList = Array.isArray(data.expenses_list) ? data.expenses_list : [];
+        const mgrOutList = Array.isArray(data.manager_cash_out_list) ? data.manager_cash_out_list : [];
+        const mgrInList = Array.isArray(data.manager_cash_in_list) ? data.manager_cash_in_list : [];
+
+        let madaHtml = madaList.map(m => `<div class="flex justify-between text-xs py-0.5 border-b"><span>${m.label}:</span><span class="font-mono font-bold">${parseFloat(m.amount||0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>`).join('');
+        let expHtml = expList.map((e, i) => `<div class="flex justify-between text-xs py-0.5 border-b"><span>${i+1}. ${e.desc}:</span><span class="font-mono font-bold">${parseFloat(e.amount||0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>`).join('');
+        let mgrOutHtml = mgrOutList.map(m => `<div class="flex justify-between text-xs py-0.5 border-b"><span>${m.name}:</span><span class="font-mono font-bold">${parseFloat(m.amount||0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>`).join('');
+        let mgrInHtml = mgrInList.map(m => `<div class="flex justify-between text-xs py-0.5 border-b"><span>${m.name}:</span><span class="font-mono font-bold">${parseFloat(m.amount||0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>`).join('');
+
+        content.innerHTML = `
+          <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2 text-xs">
+            <div class="flex justify-between border-b pb-1 font-black text-slate-900">
+              <span>ക്ലോസിംഗ് തീയതി:</span>
+              <span class="font-mono">${data.date}</span>
+            </div>
+            
+            <div class="bg-amber-50 p-2 rounded-xl">
+              <span class="font-bold text-amber-900 block mb-1">⚡ ചിലവുകൾ & പർച്ചേസ് (${parseFloat(data.total_cash_sale - (data.counter_cash||0) - (data.manager_cash_out||0) + (data.manager_cash_in||0)).toLocaleString('en-IN', {minimumFractionDigits: 2})}):</span>
+              ${expHtml || '<p class="text-slate-400">ചിലവുകൾ ഇല്ല</p>'}
+            </div>
+
+            <div class="flex justify-between p-2 bg-emerald-50 rounded-xl">
+              <span class="font-bold text-emerald-950">💵 കൗണ്ടർ ക്യാഷ്:</span>
+              <span class="font-mono font-bold">${parseFloat(data.counter_cash||0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+            </div>
+
+            <div class="bg-blue-50 p-2 rounded-xl">
+              <span class="font-bold text-blue-900 block mb-1">💳 മദാ ബാങ്ക് (${parseFloat(data.total_bank_sale||0).toLocaleString('en-IN', {minimumFractionDigits: 2})}):</span>
+              ${madaHtml || '<p class="text-slate-400">ഇല്ല</p>'}
+            </div>
+            
+            ${mgrOutList.length > 0 ? `
+              <div class="bg-purple-50 p-2 rounded-xl">
+                <span class="font-bold text-purple-900 block mb-1">📤 മാനേജർക്ക് കൊടുത്തത്:</span>
+                ${mgrOutHtml}
+              </div>
+            ` : ''}
+
+            ${mgrInList.length > 0 ? `
+              <div class="bg-purple-50 p-2 rounded-xl">
+                <span class="font-bold text-purple-900 block mb-1">📥 മാനേജർ തന്നത്:</span>
+                ${mgrInHtml}
+              </div>
+            ` : ''}
+
+            <div class="bg-slate-900 text-white p-3 rounded-xl space-y-1 font-black">
+              <div class="flex justify-between text-emerald-400"><span>1. ആകെ ക്യാഷ് സെയിൽ:</span><span class="font-mono">${parseFloat(data.total_cash_sale||0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
+              <div class="flex justify-between text-blue-400"><span>2. ആകെ ബാങ്ക് സെയിൽ:</span><span class="font-mono">${parseFloat(data.total_bank_sale||0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
+              <div class="flex justify-between text-amber-400 pt-1 border-t border-slate-700 text-sm"><span>⭐ GRAND TOTAL:</span><span class="font-mono">${parseFloat(data.grand_total||0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
+            </div>
+          </div>
+        `;
+
+      } catch (e) {
+        content.innerHTML = `<p class="text-center text-rose-500 py-4 font-bold">പിശക്: ${e.message}</p>`;
+      }
+    }
+
+    function printHistoryReport() {
+      if (!currentHistoryData) return;
+      window.print();
+    }
+
+    // WHATSAPP SHARE
+    function shareWhatsApp() {
+      const dt = document.getElementById("closingDate").value;
+      const shopName = currentShop ? currentShop.name.toUpperCase() : "ALNASSR";
+      const counterCash = parseFloat(document.getElementById("counterCash").value) || 0;
+
+      let managerOut = 0;
+      let mgrOutText = "";
+      closingState.managerCashOutList.forEach(m => {
+        managerOut += m.amount;
+        mgrOutText += `  ▫️ ${m.name}: ${m.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
+      });
+
+      let managerIn = 0;
+      let mgrInText = "";
+      closingState.managerCashInList.forEach(m => {
+        managerIn += m.amount;
+        mgrInText += `  ▫️ ${m.name}: ${m.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
+      });
+
+      let totalMada = 0;
+      let madaText = "";
+      closingState.madaMachines.forEach(m => {
+        totalMada += (m.amount || 0);
+        if (m.amount > 0) madaText += `  ▫️ ${m.label}: ${m.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n`;
+      });
+
+      let totalExpenses = 0;
+      let expText = "";
+      closingState.expenses.forEach(e => {
+        totalExpenses += e.amount;
+        let remStr = (e.remaining_due !== null && e.remaining_due !== undefined) 
+          ? ` (ബാക്കി: ${e.remaining_due.toLocaleString('en-IN', { minimumFractionDigits: 2 })})` 
+          : '';
+        let crBillStr = e.credit_bill > 0 ? ` [ബിൽ: ${e.credit_bill.toLocaleString('en-IN', { minimumFractionDigits: 2 })}]` : '';
+        expText += `  ▫️ ${e.desc}${crBillStr}: ${e.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}${remStr}\n`;
+      });
+
+      const totalCashSale = Math.max(0, (counterCash + managerOut - managerIn + totalExpenses));
+      const grandTotal = totalCashSale + totalMada;
+
+      let text = `📊 *${shopName} - DAILY CASH CLOSING*\n` +
+                 `📅 *Date:* ${dt}\n` +
+                 `--------------------------------\n` +
+                 `⚡ *Expenses Outflow:* ${totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n` +
+                 (expText ? `${expText}` : '') +
+                 `💵 *Counter Cash:* ${counterCash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n` +
+                 (mgrOutText ? `📤 *Cash to Manager (${managerOut}):*\n${mgrOutText}` : '') +
+                 (mgrInText ? `📥 *Cash from Manager (${managerIn}):*\n${mgrInText}` : '') +
+                 `💰 *Total Cash Sale:* ${totalCashSale.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n` +
+                 `--------------------------------\n` +
+                 `💳 *Total Mada Bank:* ${totalMada.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n` +
+                 (madaText ? `${madaText}` : '') +
+                 `--------------------------------\n` +
+                 `⭐ *GRAND TOTAL SALES:* ${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n` +
+                 `--------------------------------`;
+
+      window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(text), '_blank');
+    }
+
+    window.onload = function() {
+      document.getElementById("closingDate").value = getSaudiBusinessDate();
+      checkLoginState();
+      if (window.lucide) lucide.createIcons();
+    };
+  </script>
+</body>
+</html>

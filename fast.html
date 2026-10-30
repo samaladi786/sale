@@ -1,0 +1,1635 @@
+<!DOCTYPE html>
+<html lang="ml">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+ <title>ALNASSR സൂപ്പർ ഫാസ്റ്റ് POS</title>
+
+<link rel="manifest" href="manifest-fast.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0f172a">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+Malayalam:wght@400;500;600;700&display=swap');
+    body { font-family: 'Manrope', 'Noto Sans Malayalam', sans-serif; -webkit-tap-highlight-color: transparent; }
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+    .touch-btn:active { transform: scale(0.97); }
+    .uppercase-input { text-transform: uppercase; }
+
+    @media print {
+      body * { visibility: hidden !important; }
+      #thermalReceiptContainer, #thermalReceiptContainer * { visibility: visible !important; }
+      #thermalReceiptContainer {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        max-width: 76mm !important;
+        padding: 2mm !important;
+        margin: 0 !important;
+        background: white !important;
+        color: black !important;
+        font-family: monospace !important;
+        font-size: 11px !important;
+        line-height: 1.25 !important;
+        font-weight: 700 !important;
+      }
+      @page { size: auto; margin: 0mm; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col pb-8">
+
+  <!-- 1. LOGIN SCREEN -->
+  <div id="loginScreen" class="fixed inset-0 bg-slate-900/95 flex items-center justify-center z-[99999] p-4 backdrop-blur-sm">
+    <div class="bg-white rounded-3xl max-w-xs w-full p-6 shadow-2xl border text-center space-y-4">
+      <div class="w-14 h-14 rounded-2xl bg-slate-900 text-emerald-400 flex items-center justify-center mx-auto shadow-lg border border-slate-700">
+        <i data-lucide="zap" class="w-7 h-7"></i>
+      </div>
+      <div>
+        <h2 class="text-base font-extrabold text-slate-900">ALNASSR ഫാസ്റ്റ് POS</h2>
+        <p class="text-xs text-slate-500 mt-1">ഷോപ്പ് പിൻ അല്ലെങ്കിൽ മാസ്റ്റർ പിൻ നൽകുക</p>
+      </div>
+
+      <form onsubmit="event.preventDefault(); verifyFastLogin();" class="space-y-4">
+        <input 
+          type="password" 
+          inputmode="numeric" 
+          maxlength="8" 
+          id="fastLoginPin" 
+          placeholder="••••" 
+          autofocus 
+          class="text-center text-2xl tracking-[0.4em] font-black w-40 py-3 border-2 rounded-2xl mx-auto block outline-none focus:border-emerald-600 bg-slate-50" 
+        />
+        <button 
+          type="button" 
+          onclick="verifyFastLogin()" 
+          class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-md touch-btn flex items-center justify-center gap-1.5 cursor-pointer">
+          <i data-lucide="log-in" class="w-4 h-4"></i> പ്രവേശിക്കുക
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. STICKY TOP HEADER -->
+  <header class="bg-slate-900 text-white sticky top-0 z-40 shadow-md border-b border-white/10 px-3 py-2.5">
+    <div class="flex items-center justify-between gap-2 max-w-md mx-auto">
+      <div class="flex items-center gap-2 overflow-hidden flex-1">
+        <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black border border-emerald-500/30 shrink-0">
+          <i data-lucide="zap" class="w-4 h-4"></i>
+        </div>
+        <div class="truncate flex-1">
+          <!-- MULTI-SHOP SELECTOR (MASTER PIN) -->
+          <div id="fastShopSelectorWrap" class="hidden">
+            <select id="fastShopSelector" onchange="onFastShopChanged(this.value)" class="bg-slate-800 text-emerald-400 font-extrabold text-xs px-2 py-0.5 rounded-lg border border-slate-700 outline-none cursor-pointer max-w-[150px] truncate">
+            </select>
+          </div>
+          <h1 id="fastShopTitle" class="text-xs font-black text-white truncate">ALNASSR POS</h1>
+          <div class="flex items-center gap-1 text-[9.5px]">
+            <span id="fastNetworkBadge" class="font-extrabold text-emerald-400">🟢 ഓൺലൈൻ</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button onclick="openClosingModal()" title="ഡെയ്‌ലി ക്ലോസിംഗ് & വാട്‌സ്ആപ്പ്" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow touch-btn flex items-center gap-1 cursor-pointer">
+          <i data-lucide="send" class="w-3.5 h-3.5"></i> ക്ലോസിംഗ്
+        </button>
+        <a href="mobile.html" title="ഫുൾ POS മോഡ്" class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold touch-btn flex items-center gap-1 cursor-pointer">
+          <i data-lucide="layout" class="w-3.5 h-3.5 text-emerald-400"></i> ഫുൾ
+        </a>
+        <button onclick="logoutFastApp()" class="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs touch-btn cursor-pointer">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- OFFLINE PENDING SYNC NOTICE -->
+  <div id="fastOfflineSyncBar" class="bg-amber-500 text-slate-900 text-xs font-bold py-1.5 px-4 text-center hidden cursor-pointer" onclick="syncFastOfflineQueue()">
+    ⚠️ <span id="fastOfflineSyncMsg">ഓഫ്‍ലൈൻ എൻട്രികൾ ഉണ്ട്. സിങ്ക് ചെയ്യാൻ ഇവിടെ ക്ലിക്ക് ചെയ്യുക.</span>
+  </div>
+
+  <!-- 3. DATE BAR & TAB SWITCHER (1. പർച്ചേസ് | 2. ചിലവ് | 3. സെയിൽസ്) -->
+  <div class="bg-slate-800 text-white px-3 py-1.5 border-b border-slate-700 shadow-inner sticky top-[51px] z-30">
+    <div class="max-w-md mx-auto flex items-center justify-between gap-1.5">
+      <input 
+        type="date" 
+        id="fastBusinessDate" 
+        onchange="onFastDateChanged(this.value)" 
+        class="bg-slate-900 text-emerald-400 font-black px-2.5 py-1 rounded-xl border border-slate-600 text-xs outline-none cursor-pointer flex-1 max-w-[130px]" 
+      />
+
+      <div class="flex bg-slate-900 p-0.5 rounded-xl border border-slate-700 text-xs font-black flex-1 justify-end">
+        <button onclick="switchFastTab('purchase')" id="fastTab-purchase" class="py-1 px-2.5 rounded-lg bg-blue-600 text-white shadow transition cursor-pointer">1. പർച്ചേസ്</button>
+        <button onclick="switchFastTab('expense')" id="fastTab-expense" class="py-1 px-2.5 rounded-lg text-slate-400 transition cursor-pointer">2. ചിലവ്</button>
+        <button onclick="switchFastTab('sale')" id="fastTab-sale" class="py-1 px-2.5 rounded-lg text-slate-400 transition cursor-pointer">3. സെയിൽസ്</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. MAIN WORKSPACE CONTAINER -->
+  <main class="w-full max-w-md mx-auto px-3 pt-3 flex-1 flex flex-col justify-between space-y-3">
+
+    <!-- TAB 1: PURCHASE ENTRY -->
+    <div id="fastView-purchase" class="space-y-2.5">
+      <div class="bg-white p-4 rounded-3xl border border-blue-200 shadow-sm space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">വെണ്ടർ പേര്:</label>
+          <div class="relative">
+            <input 
+              list="vendorListOptions" 
+              id="fastPurchaseVendorInput" 
+              onclick="this.select()" 
+              onfocus="this.select()" 
+              oninput="this.value = this.value.toUpperCase(); onFastVendorSelected();" 
+              onchange="onFastVendorSelected()" 
+              placeholder="വെണ്ടർ പേര്..." 
+              class="w-full text-base font-black p-3 pr-8 rounded-2xl border-2 border-blue-400 bg-blue-50/30 text-slate-900 outline-none uppercase-input" 
+            />
+            <button type="button" onclick="clearFastInput('fastPurchaseVendorInput', onFastVendorSelected)" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">✕</button>
+          </div>
+          <datalist id="vendorListOptions"></datalist>
+          <span id="fastVendInfo" class="text-xs font-black text-blue-700 block mt-1 truncate"></span>
+        </div>
+
+        <div id="fastPurchaseAmountsBox" class="pt-0.5"></div>
+
+        <button onclick="saveFastPurchaseEntry()" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-sm font-black shadow-lg shadow-blue-600/30 touch-btn cursor-pointer flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="check-circle" class="w-5 h-5"></i> പർച്ചേസ് സേവ് ചെയ്യുക
+        </button>
+      </div>
+    </div>
+
+    <!-- TAB 2: EXPENSE & SALARY ENTRY -->
+    <div id="fastView-expense" class="hidden space-y-2.5">
+      <div class="bg-white p-4 rounded-3xl border border-amber-200 shadow-sm space-y-3">
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-bold text-slate-700">ചിലവ് ഇനം / സ്റ്റാഫ്:</label>
+            <span id="fastExpTypeBadge" class="text-[9.5px] bg-amber-100 text-amber-800 px-2 py-0.2 rounded-full font-bold">ചിലവ്</span>
+          </div>
+          <div class="relative">
+            <input 
+              list="unifiedPartyOptions" 
+              id="fastUnifiedPartyInput" 
+              onclick="this.select()" 
+              onfocus="this.select()" 
+              oninput="this.value = this.value.toUpperCase(); onFastUnifiedSelected();" 
+              onchange="onFastUnifiedSelected()" 
+              placeholder="പേര് ടൈപ്പ് ചെയ്യുക..." 
+              class="w-full text-base font-black p-3 pr-8 rounded-2xl border-2 border-amber-400 bg-amber-50/30 text-slate-900 outline-none uppercase-input" 
+            />
+            <button type="button" onclick="clearFastInput('fastUnifiedPartyInput', onFastUnifiedSelected)" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">✕</button>
+          </div>
+          <datalist id="unifiedPartyOptions"></datalist>
+          <span id="fastUnifiedInfo" class="text-xs font-black text-amber-700 block mt-1 truncate"></span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-amber-50 p-2 rounded-2xl border border-amber-200">
+            <label class="block text-[10px] font-black text-amber-900 mb-0.5 text-center">💵 ക്യാഷ് നൽകിയത്</label>
+            <input type="number" step="any" inputmode="decimal" id="fastExpCash" placeholder="0.00" class="w-full text-center text-base font-black p-2 rounded-xl border bg-white outline-none text-amber-800" />
+          </div>
+          <div class="bg-purple-50 p-2 rounded-2xl border border-purple-200">
+            <label class="block text-[10px] font-black text-purple-900 mb-0.5 text-center">🏦 ബാങ്ക് നൽകിയത്</label>
+            <input type="number" step="any" inputmode="decimal" id="fastExpBank" placeholder="0.00" class="w-full text-center text-base font-black p-2 rounded-xl border bg-white outline-none text-purple-800" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-bold text-slate-600 mb-0.5">വിവരണം / കുറിപ്പ്:</label>
+          <input type="text" id="fastExpNote" placeholder="കുറിപ്പ്..." class="w-full text-xs p-2.5 rounded-xl border bg-slate-50 outline-none" />
+        </div>
+
+        <button id="btnFastSaveExp" onclick="saveFastUnifiedEntry()" class="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-sm font-black shadow-lg shadow-amber-600/30 touch-btn cursor-pointer flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="check-circle" class="w-5 h-5"></i> ചിലവ് സേവ് ചെയ്യുക
+        </button>
+      </div>
+    </div>
+
+    <!-- TAB 3: SALE ENTRY (MULTI MADA MACHINE INPUTS) -->
+    <div id="fastView-sale" class="hidden space-y-2.5">
+      <div class="bg-white p-4 rounded-3xl border border-emerald-200 shadow-sm space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">കസ്റ്റമർ പേര്:</label>
+          <div class="relative">
+            <input 
+              list="customerListOptions" 
+              id="fastSaleCustomerInput" 
+              onclick="this.select()" 
+              onfocus="this.select()" 
+              oninput="this.value = this.value.toUpperCase(); onFastCustomerSelected();" 
+              onchange="onFastCustomerSelected()" 
+              value="SHOPE" 
+              placeholder="കസ്റ്റമർ പേര്..." 
+              class="w-full text-base font-black p-3 pr-8 rounded-2xl border-2 border-emerald-400 bg-emerald-50/30 text-slate-900 outline-none uppercase-input" 
+            />
+            <button type="button" onclick="clearFastInput('fastSaleCustomerInput', onFastCustomerSelected)" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">✕</button>
+          </div>
+          <datalist id="customerListOptions"></datalist>
+          <span id="fastCustInfo" class="text-xs font-black text-emerald-700 block mt-1 truncate">ക്യാഷ് കസ്റ്റമർ</span>
+        </div>
+
+        <div id="fastSaleAmountsBox" class="space-y-2"></div>
+
+        <button onclick="saveFastSaleEntry()" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-sm font-black shadow-lg shadow-emerald-600/30 touch-btn cursor-pointer flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="check-circle" class="w-5 h-5"></i> സെയിൽ സേവ് ചെയ്യുക
+        </button>
+      </div>
+    </div>
+
+    <!-- BOTTOM STRIP: 3 CLICKABLE CARDS (OPENS TXN LIST FOR EDIT & DELETE) -->
+    <div class="space-y-2 pt-1">
+      <div class="grid grid-cols-3 gap-1.5 text-center text-xs font-bold">
+        <div onclick="openTxnListModal('purchase')" class="bg-blue-950 text-white p-2 rounded-2xl border border-blue-800 cursor-pointer touch-btn hover:bg-blue-900">
+          <span class="text-[9px] text-blue-300 block uppercase font-extrabold flex items-center justify-center gap-1">
+            പർച്ചേസ് <i data-lucide="list" class="w-2.5 h-2.5"></i>
+          </span>
+          <span id="fastTodayPurTotal" class="text-xs font-black">0</span>
+        </div>
+        <div onclick="openTxnListModal('expense')" class="bg-amber-950 text-white p-2 rounded-2xl border border-amber-800 cursor-pointer touch-btn hover:bg-amber-900">
+          <span class="text-[9px] text-amber-300 block uppercase font-extrabold flex items-center justify-center gap-1">
+            ചിലവുകൾ <i data-lucide="list" class="w-2.5 h-2.5"></i>
+          </span>
+          <span id="fastTodayExpTotal" class="text-xs font-black">0</span>
+        </div>
+        <div onclick="openTxnListModal('sale')" class="bg-emerald-950 text-white p-2 rounded-2xl border border-emerald-800 cursor-pointer touch-btn hover:bg-emerald-900">
+          <span class="text-[9px] text-emerald-300 block uppercase font-extrabold flex items-center justify-center gap-1">
+            സെയിൽസ് <i data-lucide="list" class="w-2.5 h-2.5"></i>
+          </span>
+          <span id="fastTodaySaleTotal" class="text-xs font-black">0</span>
+        </div>
+      </div>
+
+      <!-- LAST 3 TRANSACTIONS STRIP -->
+      <div class="bg-white p-2.5 rounded-2xl border shadow-sm space-y-1.5">
+        <span class="text-[9.5px] font-black uppercase text-slate-400 block px-1">ഈ ആപ്പിൽ അവസാനം ചേർത്തവ:</span>
+        <div id="fastRecentTxnsList" class="space-y-1 text-xs">
+          <div class="text-center text-slate-400 text-[11px] py-1 font-bold">ഇടപാടുകൾ ഇല്ല</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: VIEW / EDIT / DELETE TODAY'S FAST TRANSACTIONS    -->
+  <!-- ======================================================== -->
+  <div id="txnListModal" class="fixed inset-0 bg-slate-950/85 flex items-center justify-center z-[99999] hidden p-3 overflow-y-auto backdrop-blur-sm">
+    <div class="max-w-md w-full bg-white rounded-3xl shadow-2xl border p-4 space-y-3.5 my-auto max-h-[92vh] overflow-y-auto relative">
+      <div class="flex items-center justify-between border-b pb-2">
+        <div>
+          <h3 id="txnListModalTitle" class="text-xs font-black text-slate-900 uppercase">ഇടപാടുകൾ</h3>
+          <p class="text-[9.5px] font-bold text-slate-500">ഈ ആപ്പിൽ അടിച്ചവ മാത്രം (എഡിറ്റ് / ഡിലീറ്റ് ചെയ്യാം)</p>
+        </div>
+        <button onclick="closeTxnListModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 font-black text-xs flex items-center justify-center cursor-pointer">✕</button>
+      </div>
+
+      <div id="txnListItemsContainer" class="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1"></div>
+
+      <div class="pt-2 border-t flex justify-end">
+        <button onclick="closeTxnListModal()" class="w-full py-2 bg-slate-900 text-white font-bold rounded-xl text-xs cursor-pointer">
+          ക്ലോസ് ചെയ്യുക
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: EDIT TRANSACTION DIALOG                           -->
+  <!-- ======================================================== -->
+  <div id="editTxnModal" class="fixed inset-0 bg-slate-950/90 flex items-center justify-center z-[999999] hidden p-4 backdrop-blur-sm">
+    <div class="max-w-xs w-full bg-white rounded-3xl shadow-2xl border p-4 space-y-3 my-auto">
+      <h3 class="text-xs font-black text-slate-900 border-b pb-1.5">ഇടപാട് തിരുത്തുക (Edit)</h3>
+      <input type="hidden" id="editTxnId" />
+      
+      <div>
+        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">പേര്:</label>
+        <input type="text" id="editTxnParty" class="w-full text-xs font-black p-2 rounded-xl border bg-slate-50 outline-none uppercase-input" />
+      </div>
+
+      <div class="grid grid-cols-2 gap-1.5">
+        <div>
+          <label class="block text-[10px] font-bold text-slate-600 mb-0.5">💵 ക്യാഷ്:</label>
+          <input type="number" step="any" id="editTxnCash" class="w-full text-xs font-black p-2 rounded-xl border bg-slate-50 text-center outline-none" />
+        </div>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-600 mb-0.5">🏦 ബാങ്ക്:</label>
+          <input type="number" step="any" id="editTxnBank" class="w-full text-xs font-black p-2 rounded-xl border bg-slate-50 text-center outline-none" />
+        </div>
+      </div>
+
+      <div id="editTxnCreditWrap">
+        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">🛒 ക്രെഡിറ്റ്:</label>
+        <input type="number" step="any" id="editTxnCredit" class="w-full text-xs font-black p-2 rounded-xl border bg-slate-50 text-center outline-none" />
+      </div>
+
+      <div class="pt-2 border-t flex gap-2">
+        <button onclick="submitEditTransaction()" class="flex-1 py-2 bg-emerald-600 text-white font-bold rounded-xl text-xs touch-btn">സേവ് ചെയ്യുക</button>
+        <button onclick="closeEditTxnModal()" class="flex-1 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs touch-btn">റദ്ദാക്കുക</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: DAILY CASH CLOSING, THERMAL PRINT & WHATSAPP       -->
+  <!-- ======================================================== -->
+  <div id="closingModal" class="fixed inset-0 bg-slate-950/85 flex items-center justify-center z-[99999] hidden p-3 overflow-y-auto backdrop-blur-sm">
+    <div class="max-w-sm w-full bg-white rounded-3xl shadow-2xl border p-4 space-y-3.5 my-auto max-h-[94vh] overflow-y-auto relative">
+      
+      <div class="flex items-center justify-between border-b pb-2">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black">
+            <i data-lucide="clipboard-check" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-xs font-black text-slate-900">ഡെയ്‌ലി ക്യാഷ് ക്ലോസിംഗ്</h3>
+            <p class="text-[9.5px] font-bold text-slate-500">കൗണ്ടർ ക്യാഷ്, തെർമൽ പ്രിന്റ് & വാട്‌സ്ആപ്പ്</p>
+          </div>
+        </div>
+        <button onclick="closeClosingModal()" class="w-7 h-7 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 font-black text-xs flex items-center justify-center cursor-pointer">✕</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        
+        <!-- 1. CLOSING PHYSICAL CASH IN COUNTER -->
+        <div class="bg-emerald-50 p-3 rounded-2xl border border-emerald-200 space-y-1">
+          <label class="block font-black text-emerald-950 text-[11px]">1. ക്ലോസിംഗ് സമയത്തെ കൗണ്ടർ ക്യാഷ്:</label>
+          <input 
+            type="number" 
+            step="any" 
+            inputmode="decimal" 
+            id="closePhysicalCashInput" 
+            oninput="onPhysicalCashChanged(this.value)" 
+            placeholder="0.00" 
+            class="w-full text-center text-lg font-black p-2 rounded-xl border-2 border-emerald-400 bg-white text-emerald-800 outline-none" 
+          />
+        </div>
+
+        <!-- 2. AUTO-PULLED TODAY'S CASH PURCHASES (THIS FAST APP ONLY) -->
+        <div class="bg-blue-50/80 p-2.5 rounded-2xl border border-blue-200 space-y-1.5">
+          <div class="flex justify-between items-center text-blue-950 font-black text-[11px]">
+            <span>2. ഡ്രോയർ ക്യാഷ് പർച്ചേസ് (ഈ ആപ്പ്):</span>
+            <span id="closeAutoPurTotalDisplay" class="font-mono text-blue-800">0.00</span>
+          </div>
+          <div id="closeAutoPurListContainer" class="space-y-1 max-h-24 overflow-y-auto text-[10.5px]"></div>
+        </div>
+
+        <!-- 3. AUTO-PULLED TODAY'S CASH EXPENSES (THIS FAST APP ONLY) -->
+        <div class="bg-amber-50/80 p-2.5 rounded-2xl border border-amber-200 space-y-1.5">
+          <div class="flex justify-between items-center text-amber-950 font-black text-[11px]">
+            <span>3. ഡ്രോയർ ക്യാഷ് ചിലവുകൾ (ഈ ആപ്പ്):</span>
+            <span id="closeAutoExpTotalDisplay" class="font-mono text-amber-800">0.00</span>
+          </div>
+          <div id="closeAutoExpListContainer" class="space-y-1 max-h-24 overflow-y-auto text-[10.5px]"></div>
+        </div>
+
+        <!-- 4. EXTRA MANUAL CLOSING EXPENSES (STORED IN LOCALSTORAGE, NEVER TO SUPABASE) -->
+        <div class="bg-purple-50/80 p-2.5 rounded-2xl border border-purple-200 space-y-2">
+          <div class="flex justify-between items-center">
+            <div>
+              <label class="font-black text-purple-950 text-[11px] block">4. അധിക ചിലവ് / മാനേജർ വാങ്ങിയത്:</label>
+              <span class="text-[9px] text-purple-700 font-bold block">(ഫോണിൽ സേവ് ആകും, ക്ലൗഡിൽ കയറില്ല)</span>
+            </div>
+            <button type="button" onclick="addManualExtraExpenseRow()" class="text-[10px] bg-purple-700 text-white font-bold px-2 py-0.5 rounded-lg touch-btn cursor-pointer">
+              + ചേർക്കുക
+            </button>
+          </div>
+          <div id="manualExtraExpensesContainer" class="space-y-1.5"></div>
+          <div class="flex justify-between font-black text-purple-900 text-[11px] pt-1 border-t border-purple-200/60">
+            <span>ആകെ അധിക ചിലവുകൾ:</span>
+            <span id="closeManualExtraTotalDisplay" class="font-mono">0.00</span>
+          </div>
+        </div>
+
+        <!-- 5. SUMMARY STATS CARD -->
+        <div class="bg-slate-900 text-white p-3 rounded-2xl space-y-1.5 font-bold text-[11px] border border-slate-700">
+          <div class="flex justify-between text-emerald-400 font-black text-xs border-b border-white/10 pb-1">
+            <span>🟢 മാനേജർക്ക് നൽകിയ ക്യാഷ്:</span>
+            <span id="closeHandoverCashDisplay" class="font-mono">0.00</span>
+          </div>
+          <div class="flex justify-between text-slate-300 pt-0.5">
+            <span>ഇന്നത്തെ ആകെ ക്യാഷ് കച്ചവടം:</span>
+            <span id="closeTotalCashBizDisplay" class="font-mono">0.00</span>
+          </div>
+          <div class="flex justify-between text-slate-300">
+            <span>ഇന്നത്തെ ആകെ ബാങ്ക് (മാദ):</span>
+            <span id="closeTotalBankBizDisplay" class="font-mono">0.00</span>
+          </div>
+          <div class="flex justify-between text-white font-black text-xs border-t border-white/10 pt-1">
+            <span>ആകെ ടോട്ടൽ ബിസിനസ്സ്:</span>
+            <span id="closeGrandBizDisplay" class="font-mono text-emerald-400">0.00</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- DUAL ACTIONS: PRINT & WHATSAPP -->
+      <div class="pt-2 border-t space-y-2">
+        <button onclick="printThermalReceipt()" class="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-2xl text-xs shadow touch-btn cursor-pointer flex items-center justify-center gap-1.5">
+          <i data-lucide="printer" class="w-4 h-4"></i> 🖨️ തെർമൽ സ്ലിപ്പ് പ്രിന്റ് ചെയ്യുക
+        </button>
+        <button onclick="sendClosingWhatsAppReport()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-xs shadow-lg shadow-emerald-600/30 touch-btn cursor-pointer flex items-center justify-center gap-1.5">
+          <i data-lucide="send" class="w-4 h-4"></i> 🟢 വാട്‌സ്ആപ്പ് വഴി അയക്കുക
+        </button>
+        <button onclick="closeClosingModal()" class="w-full py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs cursor-pointer">
+          റദ്ദാക്കുക
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- HIDDEN CONTAINER FOR THERMAL PRINTER (58mm/80mm) -->
+  <div id="thermalReceiptContainer" class="hidden"></div>
+
+  <!-- JAVASCRIPT LOGIC ENGINE -->
+  <script>
+    const SHOPS = (window.SHOPS_CONFIG && Array.isArray(window.SHOPS_CONFIG)) ? window.SHOPS_CONFIG : [];
+    let currentShopId = null;
+    let currentShop = null;
+    let supabaseClient = null;
+    let isSuperAdmin = false;
+
+    let customersList = [];
+    let vendorsList = [];
+    let employeesList = [];
+    let expensesMasterList = [];
+    let allTransactionsList = [];
+
+    // Multiple Mada inputs for sales
+    let salesMadaMachines = [ { name: "മാദ 1", amount: "" } ];
+
+    // Manual closing extra items (Stored in LocalStorage)
+    let manualClosingExtras = [ { desc: "മാനേജർ വാങ്ങിയത്", amount: "" } ];
+
+    // SAUDI BUSINESS DATE (6:00 AM CUT-OFF SYNC)
+    function getSaudiBusinessDate() {
+      try {
+        const now = new Date();
+        const saudiTime = new Date(now.getTime() + (now.getTimezoneOffset() + 180) * 60000);
+        if (saudiTime.getHours() < 8) saudiTime.setDate(saudiTime.getDate() - 1);
+        const y = saudiTime.getFullYear();
+        const m = String(saudiTime.getMonth() + 1).padStart(2, '0');
+        const d = String(saudiTime.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      } catch(e) {
+        return new Date().toISOString().split('T')[0];
+      }
+    }
+
+    function cleanPartyName(str) {
+      if (!str) return '';
+      return String(str).split(' (')[0].replace(/^Staff:\s*/i, '').trim().toLowerCase();
+    }
+
+    function cleanDate(d) {
+      if (!d) return '';
+      return String(d).split('T')[0].split(' ')[0].replace(/\//g, '-').trim();
+    }
+
+    function parseToDateObj(dStr) {
+      if (!dStr) return new Date("2026-01-01");
+      if (dStr instanceof Date) return dStr;
+      let s = String(dStr).split('T')[0].trim();
+      let parts = s.split('-').map(Number);
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+
+    // SALARY ENGINE FOR ACCRUED AMOUNT
+    function getCycleStartDate(joinDate, cycleIndex) {
+      let d = new Date(joinDate.getFullYear(), joinDate.getMonth() + cycleIndex, joinDate.getDate());
+      let expectedMonth = (joinDate.getMonth() + cycleIndex) % 12;
+      if (expectedMonth < 0) expectedMonth += 12;
+      while (d.getMonth() !== expectedMonth) d.setDate(d.getDate() - 1);
+      return d;
+    }
+
+    function calculateEmployeeAccruedSalary(emp, asOfDateStr) {
+      if (!emp) return 0;
+      const monthlySalary = parseFloat(emp.monthly_salary) || 0;
+      const baseAdv = parseFloat(emp.opening_advance || emp.opening_balance) || 0;
+      if (!monthlySalary || !emp.joining_date) return baseAdv;
+
+      try {
+        const joinD = parseToDateObj(emp.joining_date);
+        if (isNaN(joinD.getTime())) return baseAdv;
+
+        let targetD = parseToDateObj(asOfDateStr);
+        if (isNaN(targetD.getTime())) targetD = new Date();
+
+        const isStopped = (emp.status === 'stopped' || emp.status === 'left');
+        if (isStopped && emp.stop_date) {
+          const stopD = parseToDateObj(emp.stop_date);
+          if (!isNaN(stopD.getTime()) && stopD < targetD) targetD = stopD;
+        }
+
+        if (targetD < joinD) return baseAdv;
+
+        let monthsDiff = (targetD.getFullYear() - joinD.getFullYear()) * 12 + (targetD.getMonth() - joinD.getMonth());
+        if (targetD.getDate() < joinD.getDate()) monthsDiff--;
+        let k = Math.max(0, monthsDiff);
+        let guard = 0;
+        while (k < 360 && guard < 400) {
+          guard++;
+          let nextCycle = getCycleStartDate(joinD, k + 1);
+          if (targetD >= nextCycle) k++;
+          else break;
+        }
+
+        return baseAdv + (k * monthlySalary);
+      } catch (e) {
+        return baseAdv;
+      }
+    }
+
+    // TRACKER FOR TRANSACTIONS CREATED ON THIS FAST POS DEVICE
+    function getFastTxnIdList() {
+      const curDate = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      try {
+        return JSON.parse(localStorage.getItem(`ALNASSR_${currentShopId}_FAST_TXN_IDS_${curDate}`)) || [];
+      } catch(e) {
+        return [];
+      }
+    }
+
+    function recordFastTxnId(id) {
+      if (!id) return;
+      const curDate = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      const list = getFastTxnIdList();
+      if (!list.includes(String(id))) {
+        list.push(String(id));
+        localStorage.setItem(`ALNASSR_${currentShopId}_FAST_TXN_IDS_${curDate}`, JSON.stringify(list));
+      }
+    }
+
+    function removeFastTxnId(id) {
+      const curDate = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      let list = getFastTxnIdList();
+      list = list.filter(item => String(item) !== String(id));
+      localStorage.setItem(`ALNASSR_${currentShopId}_FAST_TXN_IDS_${curDate}`, JSON.stringify(list));
+    }
+
+    // OFFLINE QUEUE MANAGEMENT
+    function getFastOfflineQueue() {
+      try {
+        return JSON.parse(localStorage.getItem(`ALNASSR_${currentShopId}_FAST_OFFLINE_TXNS`)) || [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function pushFastOfflineQueue(payload) {
+      const q = getFastOfflineQueue();
+      q.push({ ...payload, _timestamp: Date.now() });
+      localStorage.setItem(`ALNASSR_${currentShopId}_FAST_OFFLINE_TXNS`, JSON.stringify(q));
+      checkFastOfflineQueueUI();
+    }
+
+    function checkFastOfflineQueueUI() {
+      const q = getFastOfflineQueue();
+      const bar = document.getElementById("fastOfflineSyncBar");
+      const msg = document.getElementById("fastOfflineSyncMsg");
+      if (q.length > 0) {
+        bar.classList.remove("hidden");
+        msg.innerText = `⚠️ ${q.length} ഓഫ്‍ലൈൻ എൻട്രികൾ ഉണ്ട്. സിങ്ക് ചെയ്യാൻ ഇവിടെ ക്ലിക്ക് ചെയ്യുക.`;
+      } else {
+        bar.classList.add("hidden");
+      }
+    }
+
+    async function syncFastOfflineQueue() {
+      if (!navigator.onLine || !supabaseClient) return;
+      const q = getFastOfflineQueue();
+      if (q.length === 0) return;
+
+      const remaining = [];
+      for (const item of q) {
+        const { _timestamp, ...cleanPayload } = item;
+        try {
+          const { data, error } = await supabaseClient.from('transactions').insert([cleanPayload]).select();
+          if (error) {
+            remaining.push(item);
+          } else if (data && data[0]) {
+            recordFastTxnId(data[0].id);
+          }
+        } catch (e) {
+          remaining.push(item);
+        }
+      }
+
+      localStorage.setItem(`ALNASSR_${currentShopId}_FAST_OFFLINE_TXNS`, JSON.stringify(remaining));
+      checkFastOfflineQueueUI();
+      if (q.length > remaining.length) fetchFastData();
+    }
+
+    function updateFastNetworkStatus() {
+      const badge = document.getElementById("fastNetworkBadge");
+      if (!badge) return;
+      if (navigator.onLine) {
+        badge.className = "font-extrabold text-emerald-400";
+        badge.innerText = "🟢 ഓൺലൈൻ";
+        syncFastOfflineQueue();
+      } else {
+        badge.className = "font-extrabold text-amber-400";
+        badge.innerText = "⚠️ ഓഫ്‍ലൈൻ";
+      }
+    }
+
+    window.addEventListener('online', updateFastNetworkStatus);
+    window.addEventListener('offline', updateFastNetworkStatus);
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const savedPin = localStorage.getItem("ALNASSR_FAST_PIN");
+      const dtInp = document.getElementById("fastBusinessDate");
+      if (dtInp) dtInp.value = getSaudiBusinessDate();
+
+      if (savedPin) {
+        attemptLoginWithPin(savedPin);
+      } else {
+        document.getElementById("loginScreen").classList.remove("hidden");
+      }
+
+      renderFastPurchaseInputs('cash');
+      renderFastSaleInputs('cash');
+      updateFastNetworkStatus();
+      if (window.lucide) lucide.createIcons();
+    });
+
+    function verifyFastLogin() {
+      const pin = document.getElementById("fastLoginPin").value.trim();
+      if (!pin) return alert("പിൻ നൽകുക!");
+      attemptLoginWithPin(pin);
+    }
+
+    function attemptLoginWithPin(pin) {
+      const masterPin = String(window.MASTER_PIN);
+      const isMaster = (pin === masterPin);
+      const matched = SHOPS.find(s => String(s.pin) === pin);
+
+      if (!isMaster && !matched) {
+        alert("പിൻ തെറ്റാണ്!");
+        document.getElementById("fastLoginPin").value = "";
+        return;
+      }
+
+      isSuperAdmin = isMaster;
+      localStorage.setItem("ALNASSR_FAST_PIN", pin);
+      document.getElementById("loginScreen").classList.add("hidden");
+
+      const selectorWrap = document.getElementById("fastShopSelectorWrap");
+      const titleEl = document.getElementById("fastShopTitle");
+
+      if (isMaster) {
+        selectorWrap.classList.remove("hidden");
+        titleEl.classList.add("hidden");
+        populateShopSelectorDropdown();
+        currentShop = SHOPS[0];
+      } else {
+        selectorWrap.classList.add("hidden");
+        titleEl.classList.remove("hidden");
+        currentShop = matched;
+      }
+
+      connectActiveFastShop();
+    }
+
+    function populateShopSelectorDropdown() {
+      const sel = document.getElementById("fastShopSelector");
+      sel.innerHTML = "";
+      SHOPS.forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = s.name;
+        sel.appendChild(opt);
+      });
+      if (currentShopId) sel.value = currentShopId;
+    }
+
+    function onFastShopChanged(shopId) {
+      currentShop = SHOPS.find(s => s.id === shopId) || SHOPS[0];
+      connectActiveFastShop();
+    }
+
+    function connectActiveFastShop() {
+      currentShopId = currentShop.id;
+      document.getElementById("fastShopTitle").innerText = currentShop.name;
+      const sel = document.getElementById("fastShopSelector");
+      if (sel) sel.value = currentShopId;
+
+      if (window.supabase && currentShop.url && currentShop.key) {
+        supabaseClient = window.supabase.createClient(currentShop.url, currentShop.key);
+      }
+
+      checkFastOfflineQueueUI();
+      fetchFastData();
+    }
+
+    function logoutFastApp() {
+      localStorage.removeItem("ALNASSR_FAST_PIN");
+      window.location.reload();
+    }
+
+    function onFastDateChanged(val) {
+      renderFastTotalsAndRecent();
+    }
+
+    function switchFastTab(tab) {
+      document.getElementById("fastView-purchase").classList.add("hidden");
+      document.getElementById("fastView-expense").classList.add("hidden");
+      document.getElementById("fastView-sale").classList.add("hidden");
+
+      document.getElementById(`fastView-${tab}`).classList.remove("hidden");
+
+      ['purchase', 'expense', 'sale'].forEach(t => {
+        const btn = document.getElementById(`fastTab-${t}`);
+        if (t === tab) {
+          btn.className = `py-1 px-2.5 rounded-lg text-white shadow transition cursor-pointer font-black ${t === 'purchase' ? 'bg-blue-600' : t === 'expense' ? 'bg-amber-600' : 'bg-emerald-600'}`;
+        } else {
+          btn.className = "py-1 px-2.5 rounded-lg text-slate-400 transition cursor-pointer font-bold";
+        }
+      });
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function clearFastInput(id, callback) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.value = "";
+        el.focus();
+        if (callback) callback();
+      }
+    }
+
+    async function fetchFastData() {
+      if (!supabaseClient) return;
+      try {
+        const [cRes, vRes, eRes, expRes, tRes] = await Promise.all([
+          supabaseClient.from('customers').select('*').order('name'),
+          supabaseClient.from('vendors').select('*').order('name'),
+          supabaseClient.from('employees').select('*').order('name'),
+          supabaseClient.from('expenses_master').select('*').order('name'),
+          supabaseClient.from('transactions').select('*').order('date', { ascending: false }).limit(2500)
+        ]);
+
+        customersList = cRes.data || [];
+        vendorsList = vRes.data || [];
+        employeesList = eRes.data || [];
+        expensesMasterList = expRes.data || [];
+        allTransactionsList = tRes.data || [];
+
+        populateFastDropdowns();
+        renderFastTotalsAndRecent();
+      } catch (err) {
+        console.error("Fast data fetch error:", err);
+      }
+    }
+
+    function populateFastDropdowns() {
+      const cDL = document.getElementById("customerListOptions");
+      if (cDL) {
+        cDL.innerHTML = "";
+        customersList.forEach(c => cDL.innerHTML += `<option value="${c.name.toUpperCase()}">`);
+      }
+      const vDL = document.getElementById("vendorListOptions");
+      if (vDL) {
+        vDL.innerHTML = "";
+        vendorsList.forEach(v => vDL.innerHTML += `<option value="${v.name.toUpperCase()}">`);
+      }
+      const uDL = document.getElementById("unifiedPartyOptions");
+      if (uDL) {
+        uDL.innerHTML = "";
+        expensesMasterList.forEach(e => uDL.innerHTML += `<option value="${e.name.toUpperCase()}">`);
+        employeesList.forEach(em => uDL.innerHTML += `<option value="${em.name.toUpperCase()}">`);
+      }
+    }
+
+    // ========================================================
+    // TAB 1: PURCHASE LOGIC
+    // ========================================================
+    function renderFastPurchaseInputs(type) {
+      const box = document.getElementById("fastPurchaseAmountsBox");
+      if (!box) return;
+
+      if (type === 'credit') {
+        box.innerHTML = `
+          <div class="grid grid-cols-3 gap-1.5">
+            <div class="bg-blue-50 p-2 rounded-2xl border border-blue-200">
+              <label class="block text-[9.5px] font-black text-blue-900 mb-0.5 text-center truncate">💵 ക്യാഷ് നൽകിയത്</label>
+              <input type="number" step="any" inputmode="decimal" id="fastPurCash" placeholder="0.00" class="w-full text-center text-sm font-black p-2 rounded-xl border bg-white outline-none text-blue-800" />
+            </div>
+            <div class="bg-indigo-50 p-2 rounded-2xl border border-indigo-200">
+              <label class="block text-[9.5px] font-black text-indigo-900 mb-0.5 text-center truncate">🏦 ബാങ്ക് നൽകിയത്</label>
+              <input type="number" step="any" inputmode="decimal" id="fastPurBank" placeholder="0.00" class="w-full text-center text-sm font-black p-2 rounded-xl border bg-white outline-none text-indigo-800" />
+            </div>
+            <div class="bg-amber-50 p-2 rounded-2xl border border-amber-200">
+              <label class="block text-[9.5px] font-black text-amber-900 mb-0.5 text-center truncate">🚚 ക്രെഡിറ്റ് പർച്ചേസ്</label>
+              <input type="number" step="any" inputmode="decimal" id="fastPurCredit" placeholder="0.00" class="w-full text-center text-sm font-black p-2 rounded-xl border bg-white outline-none text-amber-800" />
+            </div>
+          </div>
+        `;
+      } else {
+        box.innerHTML = `
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-blue-50 p-2.5 rounded-2xl border border-blue-200">
+              <label class="block text-xs font-black text-blue-900 mb-0.5 text-center">💵 ക്യാഷ് പർച്ചേസ്</label>
+              <input type="number" step="any" inputmode="decimal" id="fastPurCash" placeholder="0.00" class="w-full text-center text-base font-black p-2.5 rounded-xl border bg-white outline-none text-blue-800" />
+            </div>
+            <div class="bg-indigo-50 p-2.5 rounded-2xl border border-indigo-200">
+              <label class="block text-xs font-black text-indigo-900 mb-0.5 text-center">🏦 ബാങ്ക് പർച്ചേസ്</label>
+              <input type="number" step="any" inputmode="decimal" id="fastPurBank" placeholder="0.00" class="w-full text-center text-base font-black p-2.5 rounded-xl border bg-white outline-none text-indigo-800" />
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function onFastVendorSelected() {
+      const val = document.getElementById("fastPurchaseVendorInput").value.trim();
+      const cleanName = cleanPartyName(val);
+      const vend = vendorsList.find(v => cleanPartyName(v.name) === cleanName);
+      const info = document.getElementById("fastVendInfo");
+
+      if (vend && (vend.type || '').toLowerCase() === 'credit') {
+        let liveBal = parseFloat(vend.opening_balance) || 0;
+        allTransactionsList.forEach(t => {
+          if (t && cleanPartyName(t.party_name) === cleanName && t.type === 'purchase') {
+            liveBal += (parseFloat(t.credit_amount) || 0) - Math.abs(parseFloat(t.cash_amount) || 0) - Math.abs(parseFloat(t.bank_amount) || 0);
+          }
+        });
+        info.innerText = `വെണ്ടർക്ക് നൽകാനുള്ള ബാക്കി: ${liveBal.toLocaleString('en-IN')}`;
+        renderFastPurchaseInputs('credit');
+      } else {
+        info.innerText = vend ? "ക്യാഷ് വെണ്ടർ" : "പുതിയ വെണ്ടർ (ക്യാഷ് ആയി സേവ് ആകും)";
+        renderFastPurchaseInputs('cash');
+      }
+    }
+
+    async function saveFastPurchaseEntry() {
+      let rawName = document.getElementById("fastPurchaseVendorInput").value.trim().toUpperCase();
+      if (!rawName) return alert("വെണ്ടർ പേര് നൽകുക!");
+
+      const cash = parseFloat(document.getElementById("fastPurCash")?.value) || 0;
+      const bank = parseFloat(document.getElementById("fastPurBank")?.value) || 0;
+      const credit = parseFloat(document.getElementById("fastPurCredit")?.value) || 0;
+
+      if (cash <= 0 && bank <= 0 && credit <= 0) return alert("തുക നൽകുക!");
+
+      const date = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      const payload = {
+        date: date,
+        type: 'purchase',
+        party_name: rawName,
+        cash_amount: -cash,
+        bank_amount: -bank,
+        credit_amount: credit
+      };
+
+      if (!navigator.onLine || !supabaseClient) {
+        const tempId = 'temp_' + Date.now();
+        pushFastOfflineQueue({ ...payload, id: tempId });
+        recordFastTxnId(tempId);
+        allTransactionsList.unshift({ ...payload, id: tempId });
+        renderFastTotalsAndRecent();
+        alert("⚠️ ഓഫ്‍ലൈൻ മോഡ്: പർച്ചേസ് ഫോണിൽ സേവ് ചെയ്തു!");
+      } else {
+        const { data, error } = await supabaseClient.from('transactions').insert([payload]).select();
+        if (error) return alert("എറർ: " + error.message);
+        const newRecord = (data && data[0]) ? data[0] : payload;
+        if (newRecord.id) recordFastTxnId(newRecord.id);
+        allTransactionsList.unshift(newRecord);
+        renderFastTotalsAndRecent();
+        alert("പർച്ചേസ് സേവ് ചെയ്തു!");
+      }
+
+      document.getElementById("fastPurchaseVendorInput").value = "";
+      onFastVendorSelected();
+    }
+
+    // ========================================================
+    // TAB 2: EXPENSE & SALARY LOGIC
+    // ========================================================
+    function onFastUnifiedSelected() {
+      const val = document.getElementById("fastUnifiedPartyInput").value.trim();
+      const cleanVal = cleanPartyName(val);
+      const emp = employeesList.find(e => cleanPartyName(e.name) === cleanVal);
+      const exp = expensesMasterList.find(x => cleanPartyName(x.name) === cleanVal);
+
+      const badge = document.getElementById("fastExpTypeBadge");
+      const info = document.getElementById("fastUnifiedInfo");
+      const btn = document.getElementById("btnFastSaveExp");
+      const selDate = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+
+      if (emp) {
+        badge.className = "text-[9.5px] bg-purple-100 text-purple-800 px-2 py-0.2 rounded-full font-bold";
+        badge.innerText = "സാലറി";
+        btn.className = "w-full py-3.5 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl text-sm font-black shadow-lg shadow-purple-600/30 touch-btn cursor-pointer flex items-center justify-center gap-1.5 transition";
+        btn.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5"></i> സാലറി സേവ് ചെയ്യുക`;
+
+        let totalSalary = calculateEmployeeAccruedSalary(emp, selDate);
+        let paid = 0;
+        allTransactionsList.forEach(t => {
+          if (t && t.type === 'salary' && cleanPartyName(t.party_name).includes(cleanVal)) {
+            let c = parseFloat(t.cash_amount) || 0;
+            let b = parseFloat(t.bank_amount) || 0;
+            paid += (-c - b);
+          }
+        });
+        let bal = totalSalary - paid;
+        info.innerText = `സാലറി കുടിശ്ശിക: ${bal.toLocaleString('en-IN')}`;
+      } else if (exp) {
+        badge.className = "text-[9.5px] bg-amber-100 text-amber-800 px-2 py-0.2 rounded-full font-bold";
+        badge.innerText = "ചിലവ്";
+        btn.className = "w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-sm font-black shadow-lg shadow-amber-600/30 touch-btn cursor-pointer flex items-center justify-center gap-1.5 transition";
+        btn.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5"></i> ചിലവ് സേവ് ചെയ്യുക`;
+
+        let bal = parseFloat(exp.opening_balance) || 0;
+        allTransactionsList.forEach(t => {
+          if (t) {
+            const tClean = cleanPartyName(t.party_name);
+            if (tClean.startsWith(cleanVal) || tClean === cleanVal) {
+              if (t.type === 'expense_bill') bal += (parseFloat(t.credit_amount) || 0);
+              else if (t.type === 'expense') bal -= (Math.abs(parseFloat(t.cash_amount) || 0) + Math.abs(parseFloat(t.bank_amount) || 0));
+            }
+          }
+        });
+        info.innerText = bal > 0 ? `ബിൽ കുടിശ്ശിക: ${bal.toLocaleString('en-IN')}` : "ചിലവ് ഇനം";
+      } else {
+        badge.className = "text-[9.5px] bg-amber-100 text-amber-800 px-2 py-0.2 rounded-full font-bold";
+        badge.innerText = "ചിലവ്";
+        btn.className = "w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-sm font-black shadow-lg shadow-amber-600/30 touch-btn cursor-pointer flex items-center justify-center gap-1.5 transition";
+        btn.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5"></i> ചിലവ് സേവ് ചെയ്യുക`;
+        info.innerText = "";
+      }
+      if (window.lucide) lucide.createIcons();
+    }
+
+    async function saveFastUnifiedEntry() {
+      let rawVal = document.getElementById("fastUnifiedPartyInput").value.trim().toUpperCase();
+      if (!rawVal) return alert("ഇനം അല്ലെങ്കിൽ പേര് നൽകുക!");
+
+      const cash = parseFloat(document.getElementById("fastExpCash").value) || 0;
+      const bank = parseFloat(document.getElementById("fastExpBank").value) || 0;
+      const note = document.getElementById("fastExpNote").value.trim();
+
+      if (cash <= 0 && bank <= 0) return alert("തുക നൽകുക!");
+
+      const date = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      const emp = employeesList.find(e => cleanPartyName(e.name) === cleanPartyName(rawVal));
+
+      const payload = {
+        date: date,
+        type: emp ? 'salary' : 'expense',
+        party_name: emp ? `Staff: ${emp.name} - ${note || 'സാലറി'}` : `${rawVal} (${note || rawVal})`,
+        cash_amount: -cash,
+        bank_amount: -bank,
+        credit_amount: 0
+      };
+
+      if (!navigator.onLine || !supabaseClient) {
+        const tempId = 'temp_' + Date.now();
+        pushFastOfflineQueue({ ...payload, id: tempId });
+        recordFastTxnId(tempId);
+        allTransactionsList.unshift({ ...payload, id: tempId });
+        renderFastTotalsAndRecent();
+        alert("⚠️ ഓഫ്‍ലൈൻ മോഡ്: ചിലവ് ഫോണിൽ സേവ് ചെയ്തു!");
+      } else {
+        const { data, error } = await supabaseClient.from('transactions').insert([payload]).select();
+        if (error) return alert("എറർ: " + error.message);
+        const newRecord = (data && data[0]) ? data[0] : payload;
+        if (newRecord.id) recordFastTxnId(newRecord.id);
+        allTransactionsList.unshift(newRecord);
+        renderFastTotalsAndRecent();
+        alert("സേവ് ചെയ്തു!");
+      }
+
+      document.getElementById("fastExpCash").value = "";
+      document.getElementById("fastExpBank").value = "";
+      document.getElementById("fastExpNote").value = "";
+      document.getElementById("fastUnifiedPartyInput").value = "";
+      onFastUnifiedSelected();
+    }
+
+    // ========================================================
+    // TAB 3: SALE LOGIC
+    // ========================================================
+    function renderFastSaleInputs(type) {
+      const box = document.getElementById("fastSaleAmountsBox");
+      if (!box) return;
+
+      let madaRowsHtml = "";
+      salesMadaMachines.forEach((m, idx) => {
+        madaRowsHtml += `
+          <div class="flex gap-1 items-center">
+            <input type="text" value="${m.name}" oninput="salesMadaMachines[${idx}].name = this.value" placeholder="മെഷീൻ" class="w-20 p-1.5 rounded-lg border bg-white font-bold text-[11px]" />
+            <input type="number" step="any" inputmode="decimal" value="${m.amount}" oninput="salesMadaMachines[${idx}].amount = this.value;" placeholder="0.00" class="flex-1 p-1.5 text-center font-black rounded-lg border bg-white text-blue-800 text-xs" />
+            ${salesMadaMachines.length > 1 ? `<button type="button" onclick="removeSalesMadaRow(${idx}, '${type}')" class="text-rose-600 font-black p-1">✕</button>` : ''}
+          </div>
+        `;
+      });
+
+      if (type === 'credit') {
+        box.innerHTML = `
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-emerald-50 p-2.5 rounded-2xl border border-emerald-200">
+              <label class="block text-[10px] font-black text-emerald-900 mb-0.5 text-center truncate">💵 ക്യാഷ് റസീറ്റ്</label>
+              <input type="number" step="any" inputmode="decimal" id="fastSaleCash" placeholder="0.00" class="w-full text-center text-sm font-black p-2 rounded-xl border bg-white outline-none text-emerald-800" />
+            </div>
+            <div class="bg-amber-50 p-2.5 rounded-2xl border border-amber-200">
+              <label class="block text-[10px] font-black text-amber-900 mb-0.5 text-center truncate">🛒 ക്രെഡിറ്റ് സെയിൽ</label>
+              <input type="number" step="any" inputmode="decimal" id="fastSaleCredit" placeholder="0.00" class="w-full text-center text-sm font-black p-2 rounded-xl border bg-white outline-none text-amber-800" />
+            </div>
+          </div>
+
+          <div class="bg-blue-50 p-2.5 rounded-2xl border border-blue-200 space-y-1.5">
+            <div class="flex justify-between items-center text-blue-950 font-black text-[10.5px]">
+              <span>🏦 ബാങ്ക് / മാദ മെഷീനുകൾ:</span>
+              <button type="button" onclick="addSalesMadaRow('${type}')" class="text-[10px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-lg touch-btn">
+                + മാദ ചേർക്കുക
+              </button>
+            </div>
+            <div class="space-y-1">${madaRowsHtml}</div>
+          </div>
+        `;
+      } else {
+        box.innerHTML = `
+          <div class="bg-emerald-50 p-2.5 rounded-2xl border border-emerald-200">
+            <label class="block text-xs font-black text-emerald-900 mb-0.5 text-center">💵 ക്യാഷ് സെയിൽ</label>
+            <input type="number" step="any" inputmode="decimal" id="fastSaleCash" placeholder="0.00" class="w-full text-center text-base font-black p-2.5 rounded-xl border bg-white outline-none text-emerald-800" />
+          </div>
+
+          <div class="bg-blue-50 p-2.5 rounded-2xl border border-blue-200 space-y-1.5">
+            <div class="flex justify-between items-center text-blue-950 font-black text-[11px]">
+              <span>🏦 ബാങ്ക് / മാദ മെഷീനുകൾ:</span>
+              <button type="button" onclick="addSalesMadaRow('${type}')" class="text-[10px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-lg touch-btn">
+                + മാദ ചേർക്കുക
+              </button>
+            </div>
+            <div class="space-y-1">${madaRowsHtml}</div>
+          </div>
+        `;
+      }
+    }
+
+    function addSalesMadaRow(currentType) {
+      salesMadaMachines.push({ name: `മാദ ${salesMadaMachines.length + 1}`, amount: "" });
+      renderFastSaleInputs(currentType);
+    }
+
+    function removeSalesMadaRow(idx, currentType) {
+      if (salesMadaMachines.length <= 1) return;
+      salesMadaMachines.splice(idx, 1);
+      renderFastSaleInputs(currentType);
+    }
+
+    function onFastCustomerSelected() {
+      const val = document.getElementById("fastSaleCustomerInput").value.trim();
+      const cleanName = cleanPartyName(val);
+      const cust = customersList.find(c => cleanPartyName(c.name) === cleanName);
+      const info = document.getElementById("fastCustInfo");
+
+      if (cust && (cust.type || '').toLowerCase() === 'credit') {
+        let liveBal = parseFloat(cust.opening_balance) || 0;
+        allTransactionsList.forEach(t => {
+          if (t && cleanPartyName(t.party_name) === cleanName && t.type === 'sale') {
+            liveBal += (parseFloat(t.credit_amount) || 0) - (parseFloat(t.cash_amount) || 0) - (parseFloat(t.bank_amount) || 0);
+          }
+        });
+        info.innerText = `കസ്റ്റമർ കടം ബാക്കി: ${liveBal.toLocaleString('en-IN')}`;
+        renderFastSaleInputs('credit');
+      } else {
+        info.innerText = cust ? "ക്യാഷ് കസ്റ്റമർ" : "പുതിയ കസ്റ്റമർ (ക്യാഷ് ആയി സേവ് ആകും)";
+        renderFastSaleInputs('cash');
+      }
+    }
+
+    async function saveFastSaleEntry() {
+      let rawName = document.getElementById("fastSaleCustomerInput").value.trim().toUpperCase();
+      if (!rawName) return alert("കസ്റ്റമർ പേര് നൽകുക!");
+
+      const cash = parseFloat(document.getElementById("fastSaleCash")?.value) || 0;
+      const credit = parseFloat(document.getElementById("fastSaleCredit")?.value) || 0;
+
+      let bankSum = 0;
+      salesMadaMachines.forEach(m => { bankSum += (parseFloat(m.amount) || 0); });
+
+      if (cash <= 0 && bankSum <= 0 && credit <= 0) return alert("തുക നൽകുക!");
+
+      const date = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      const payload = {
+        date: date,
+        type: 'sale',
+        party_name: rawName,
+        cash_amount: cash,
+        bank_amount: bankSum,
+        credit_amount: credit
+      };
+
+      if (!navigator.onLine || !supabaseClient) {
+        const tempId = 'temp_' + Date.now();
+        pushFastOfflineQueue({ ...payload, id: tempId });
+        recordFastTxnId(tempId);
+        allTransactionsList.unshift({ ...payload, id: tempId });
+        renderFastTotalsAndRecent();
+        alert("⚠️ ഓഫ്‍ലൈൻ മോഡ്: സെയിൽ ഫോണിൽ സേവ് ചെയ്തു!");
+      } else {
+        const { data, error } = await supabaseClient.from('transactions').insert([payload]).select();
+        if (error) return alert("എറർ: " + error.message);
+        const newRecord = (data && data[0]) ? data[0] : payload;
+        if (newRecord.id) recordFastTxnId(newRecord.id);
+        allTransactionsList.unshift(newRecord);
+        renderFastTotalsAndRecent();
+        alert("സെയിൽ സേവ് ചെയ്തു!");
+      }
+
+      salesMadaMachines = [ { name: "മാദ 1", amount: "" } ];
+      document.getElementById("fastSaleCustomerInput").value = "SHOPE";
+      onFastCustomerSelected();
+    }
+
+    // ========================================================
+    // GET TODAY'S TRANSACTIONS ENTERED VIA THIS FAST APP ONLY
+    // ========================================================
+    function getTodayFastTransactions() {
+      const curDate = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      const fastIds = getFastTxnIdList();
+
+      return allTransactionsList.filter(t => {
+        if (!t) return false;
+        const tDate = cleanDate(t.date);
+        return (tDate === curDate) && (fastIds.includes(String(t.id)));
+      });
+    }
+
+    function renderFastTotalsAndRecent() {
+      const myTxns = getTodayFastTransactions();
+      let sTot = 0, pTot = 0, eTot = 0;
+
+      myTxns.forEach(t => {
+        const c = Math.abs(parseFloat(t.cash_amount) || 0);
+        const b = Math.abs(parseFloat(t.bank_amount) || 0);
+        const cr = parseFloat(t.credit_amount) || 0;
+
+        if (t.type === 'sale') sTot += (c + b + cr);
+        else if (t.type === 'purchase') pTot += (c + b + cr);
+        else if (t.type === 'expense' || t.type === 'salary') eTot += (c + b);
+      });
+
+      document.getElementById("fastTodaySaleTotal").innerText = sTot.toLocaleString('en-IN');
+      document.getElementById("fastTodayPurTotal").innerText = pTot.toLocaleString('en-IN');
+      document.getElementById("fastTodayExpTotal").innerText = eTot.toLocaleString('en-IN');
+
+      const recentBox = document.getElementById("fastRecentTxnsList");
+      const recent = myTxns.slice(0, 3);
+      if (recent.length === 0) {
+        recentBox.innerHTML = `<div class="text-center text-slate-400 text-[11px] py-1 font-bold">ഇടപാടുകൾ ഇല്ല</div>`;
+      } else {
+        let html = "";
+        recent.forEach(r => {
+          const isSale = r.type === 'sale';
+          const isPur = r.type === 'purchase';
+          const amt = Math.abs(parseFloat(r.cash_amount) || 0) + Math.abs(parseFloat(r.bank_amount) || 0) + (parseFloat(r.credit_amount) || 0);
+          html += `
+            <div class="flex items-center justify-between py-1 border-b last:border-0 font-bold">
+              <span class="truncate pr-2">${r.party_name}</span>
+              <span class="font-black ${isSale ? 'text-emerald-700' : isPur ? 'text-blue-700' : 'text-amber-700'}">${amt.toLocaleString('en-IN')}</span>
+            </div>
+          `;
+        });
+        recentBox.innerHTML = html;
+      }
+    }
+
+    // ========================================================
+    // MODAL: VIEW / EDIT / DELETE TODAY'S FAST TRANSACTIONS
+    // ========================================================
+    function openTxnListModal(typeFilter) {
+      const myTxns = getTodayFastTransactions();
+      const filtered = myTxns.filter(t => {
+        if (typeFilter === 'expense') return t.type === 'expense' || t.type === 'salary';
+        return t.type === typeFilter;
+      });
+
+      const titleEl = document.getElementById("txnListModalTitle");
+      titleEl.innerText = typeFilter === 'sale' ? "സെയിൽസ് ഇടപാടുകൾ" : typeFilter === 'purchase' ? "പർച്ചേസ് ഇടപാടുകൾ" : "ചിലവ് ഇടപാടുകൾ";
+
+      const container = document.getElementById("txnListItemsContainer");
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="p-6 text-center text-slate-400 text-xs font-bold">ഇടപാടുകൾ ഒന്നും ചേർത്തിട്ടില്ല</div>`;
+      } else {
+        let html = "";
+        filtered.forEach(t => {
+          const c = Math.abs(parseFloat(t.cash_amount) || 0);
+          const b = Math.abs(parseFloat(t.bank_amount) || 0);
+          const cr = parseFloat(t.credit_amount) || 0;
+          const tot = c + b + cr;
+
+          html += `
+            <div class="bg-slate-50 p-2.5 rounded-2xl border border-slate-200 flex items-center justify-between gap-2 text-xs font-bold">
+              <div class="truncate flex-1 min-w-0">
+                <span class="text-slate-900 block truncate font-black">${t.party_name}</span>
+                <span class="text-[10px] text-slate-500 font-mono">💵 ${c} | 🏦 ${b} | 🛒 ${cr}</span>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span class="font-mono font-black text-slate-900 pr-1">${tot}</span>
+                <button onclick="openEditTxnDialog('${t.id}')" class="p-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg touch-btn" title="എഡിറ്റ്">
+                  <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                </button>
+                <button onclick="deleteFastTransaction('${t.id}')" class="p-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg touch-btn" title="ഡിലീറ്റ്">
+                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+      }
+
+      document.getElementById("txnListModal").classList.remove("hidden");
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function closeTxnListModal() {
+      document.getElementById("txnListModal").classList.add("hidden");
+    }
+
+    async function deleteFastTransaction(txnId) {
+      if (!confirm("ഈ ഇടപാട് തീർച്ചയായും ഡിലീറ്റ് ചെയ്യണമോ?")) return;
+
+      if (supabaseClient && navigator.onLine) {
+        const { error } = await supabaseClient.from('transactions').delete().eq('id', txnId);
+        if (error) return alert("ഡിലീറ്റ് പരാജയപ്പെട്ടു: " + error.message);
+      }
+
+      removeFastTxnId(txnId);
+      allTransactionsList = allTransactionsList.filter(t => String(t.id) !== String(txnId));
+      renderFastTotalsAndRecent();
+      closeTxnListModal();
+      alert("ഇടപാട് ഡിലീറ്റ് ചെയ്തു!");
+    }
+
+    function openEditTxnDialog(txnId) {
+      const t = allTransactionsList.find(x => String(x.id) === String(txnId));
+      if (!t) return;
+
+      document.getElementById("editTxnId").value = t.id;
+      document.getElementById("editTxnParty").value = t.party_name;
+      document.getElementById("editTxnCash").value = Math.abs(parseFloat(t.cash_amount) || 0);
+      document.getElementById("editTxnBank").value = Math.abs(parseFloat(t.bank_amount) || 0);
+      document.getElementById("editTxnCredit").value = parseFloat(t.credit_amount) || 0;
+
+      const crWrap = document.getElementById("editTxnCreditWrap");
+      if (t.type === 'expense' || t.type === 'salary') crWrap.classList.add("hidden");
+      else crWrap.classList.remove("hidden");
+
+      document.getElementById("editTxnModal").classList.remove("hidden");
+    }
+
+    function closeEditTxnModal() {
+      document.getElementById("editTxnModal").classList.add("hidden");
+    }
+
+    async function submitEditTransaction() {
+      const id = document.getElementById("editTxnId").value;
+      const t = allTransactionsList.find(x => String(x.id) === String(id));
+      if (!t) return;
+
+      const pName = document.getElementById("editTxnParty").value.trim().toUpperCase();
+      const cash = parseFloat(document.getElementById("editTxnCash").value) || 0;
+      const bank = parseFloat(document.getElementById("editTxnBank").value) || 0;
+      const credit = parseFloat(document.getElementById("editTxnCredit").value) || 0;
+
+      if (!pName) return alert("പേര് നൽകുക!");
+      if (cash <= 0 && bank <= 0 && credit <= 0) return alert("തുക നൽകുക!");
+
+      const isNegative = (t.type === 'purchase' || t.type === 'expense' || t.type === 'salary');
+      const updatedFields = {
+        party_name: pName,
+        cash_amount: isNegative ? -cash : cash,
+        bank_amount: isNegative ? -bank : bank,
+        credit_amount: credit
+      };
+
+      if (supabaseClient && navigator.onLine) {
+        const { error } = await supabaseClient.from('transactions').update(updatedFields).eq('id', id);
+        if (error) return alert("അപ്‌ഡേറ്റ് പരാജയപ്പെട്ടു: " + error.message);
+      }
+
+      Object.assign(t, updatedFields);
+      renderFastTotalsAndRecent();
+      closeEditTxnModal();
+      closeTxnListModal();
+      alert("ഇടപാട് തിരുത്തി അപ്‌ഡേറ്റ് ചെയ്തു!");
+    }
+
+    // ========================================================
+    // CLOSING LOGIC (WITH LOCALSTORAGE MANUAL EXTRAS)
+    // ========================================================
+    function loadManualClosingExtras() {
+      const curDate = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      const storageKey = `ALNASSR_${currentShopId}_FAST_CLOSING_EXTRAS_${curDate}`;
+      try {
+        const saved = JSON.parse(localStorage.getItem(storageKey));
+        if (Array.isArray(saved) && saved.length > 0) {
+          manualClosingExtras = saved;
+        } else {
+          manualClosingExtras = [ { desc: "മാനേജർ വാങ്ങിയത്", amount: "" } ];
+        }
+      } catch (e) {
+        manualClosingExtras = [ { desc: "മാനേജർ വാങ്ങിയത്", amount: "" } ];
+      }
+
+      const cashKey = `ALNASSR_${currentShopId}_FAST_PHYSICAL_CASH_${curDate}`;
+      const savedCash = localStorage.getItem(cashKey);
+      const cashInput = document.getElementById("closePhysicalCashInput");
+      if (cashInput && savedCash !== null) cashInput.value = savedCash;
+
+      renderManualExtraExpenseRows();
+    }
+
+    function saveManualClosingExtrasToStorage() {
+      const curDate = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      const storageKey = `ALNASSR_${currentShopId}_FAST_CLOSING_EXTRAS_${curDate}`;
+      localStorage.setItem(storageKey, JSON.stringify(manualClosingExtras));
+    }
+
+    function onPhysicalCashChanged(val) {
+      const curDate = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      const cashKey = `ALNASSR_${currentShopId}_FAST_PHYSICAL_CASH_${curDate}`;
+      localStorage.setItem(cashKey, val || "");
+      recalculateClosingLiveMath();
+    }
+
+    function openClosingModal() {
+      document.getElementById("closingModal").classList.remove("hidden");
+      loadManualClosingExtras();
+      populateClosingAutoItems();
+      recalculateClosingLiveMath();
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function closeClosingModal() {
+      document.getElementById("closingModal").classList.add("hidden");
+    }
+
+    function addManualExtraExpenseRow() {
+      manualClosingExtras.push({ desc: "", amount: "" });
+      saveManualClosingExtrasToStorage();
+      renderManualExtraExpenseRows();
+      recalculateClosingLiveMath();
+    }
+
+    function removeManualExtraExpenseRow(idx) {
+      if (manualClosingExtras.length <= 1) {
+        manualClosingExtras[0] = { desc: "", amount: "" };
+      } else {
+        manualClosingExtras.splice(idx, 1);
+      }
+      saveManualClosingExtrasToStorage();
+      renderManualExtraExpenseRows();
+      recalculateClosingLiveMath();
+    }
+
+    function renderManualExtraExpenseRows() {
+      const container = document.getElementById("manualExtraExpensesContainer");
+      if (!container) return;
+      let html = "";
+      manualClosingExtras.forEach((e, idx) => {
+        html += `
+          <div class="flex gap-1.5 items-center">
+            <input type="text" value="${e.desc}" oninput="manualClosingExtras[${idx}].desc = this.value; saveManualClosingExtrasToStorage();" placeholder="വിവരണം (ഉദാ: മാനേജർ)" class="flex-1 p-1.5 rounded-lg border bg-white font-bold text-xs" />
+            <input type="number" step="any" inputmode="decimal" value="${e.amount}" oninput="manualClosingExtras[${idx}].amount = this.value; saveManualClosingExtrasToStorage(); recalculateClosingLiveMath();" placeholder="0.00" class="w-24 p-1.5 text-center font-black rounded-lg border bg-white text-purple-800 text-xs" />
+            ${manualClosingExtras.length > 1 ? `<button type="button" onclick="removeManualExtraExpenseRow(${idx})" class="text-rose-600 font-black p-1">✕</button>` : ''}
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    }
+
+    function populateClosingAutoItems() {
+      const myTxns = getTodayFastTransactions();
+      const purBox = document.getElementById("closeAutoPurListContainer");
+      const expBox = document.getElementById("closeAutoExpListContainer");
+
+      let autoPurTotal = 0;
+      let autoExpTotal = 0;
+      let autoMadaTotal = 0;
+
+      let purLines = [];
+      let expLines = [];
+
+      myTxns.forEach(t => {
+        const cashAmt = Math.abs(parseFloat(t.cash_amount) || 0);
+        const bankAmt = Math.abs(parseFloat(t.bank_amount) || 0);
+
+        if (t.type === 'purchase' && cashAmt > 0) {
+          autoPurTotal += cashAmt;
+          purLines.push(`<div class="flex justify-between py-0.5 border-b last:border-0"><span class="truncate pr-1">${t.party_name}</span><span class="font-bold">${cashAmt.toFixed(2)}</span></div>`);
+        } else if ((t.type === 'expense' || t.type === 'salary') && cashAmt > 0) {
+          autoExpTotal += cashAmt;
+          expLines.push(`<div class="flex justify-between py-0.5 border-b last:border-0"><span class="truncate pr-1">${t.party_name}</span><span class="font-bold">${cashAmt.toFixed(2)}</span></div>`);
+        }
+
+        if (t.type === 'sale' && bankAmt > 0) {
+          autoMadaTotal += bankAmt;
+        }
+      });
+
+      purBox.innerHTML = purLines.length > 0 ? purLines.join('') : '<div class="text-slate-400">ക്യാഷ് പർച്ചേസ് ഇല്ല</div>';
+      expBox.innerHTML = expLines.length > 0 ? expLines.join('') : '<div class="text-slate-400">ക്യാഷ് ചിലവുകൾ ഇല്ല</div>';
+
+      document.getElementById("closeAutoPurTotalDisplay").innerText = autoPurTotal.toFixed(2);
+      document.getElementById("closeAutoExpTotalDisplay").innerText = autoExpTotal.toFixed(2);
+      document.getElementById("closeTotalBankBizDisplay").innerText = autoMadaTotal.toFixed(2);
+    }
+
+    function recalculateClosingLiveMath() {
+      const physicalCash = parseFloat(document.getElementById("closePhysicalCashInput")?.value) || 0;
+      const autoPurTotal = parseFloat(document.getElementById("closeAutoPurTotalDisplay")?.innerText) || 0;
+      const autoExpTotal = parseFloat(document.getElementById("closeAutoExpTotalDisplay")?.innerText) || 0;
+      const autoMadaTotal = parseFloat(document.getElementById("closeTotalBankBizDisplay")?.innerText) || 0;
+
+      let manualExtraTotal = 0;
+      manualClosingExtras.forEach(e => { manualExtraTotal += (parseFloat(e.amount) || 0); });
+
+      const handoverCash = physicalCash;
+      const totalCashBiz = physicalCash + autoPurTotal + autoExpTotal + manualExtraTotal;
+      const grandTotalBiz = totalCashBiz + autoMadaTotal;
+
+      document.getElementById("closeManualExtraTotalDisplay").innerText = manualExtraTotal.toFixed(2);
+      document.getElementById("closeHandoverCashDisplay").innerText = handoverCash.toFixed(2);
+      document.getElementById("closeTotalCashBizDisplay").innerText = totalCashBiz.toFixed(2);
+      document.getElementById("closeGrandBizDisplay").innerText = grandTotalBiz.toFixed(2);
+    }
+
+    function generateReceiptPlainTextData() {
+      const curDate = document.getElementById("fastBusinessDate")?.value || getSaudiBusinessDate();
+      const shopName = currentShop ? currentShop.name : "ALNASSR";
+      const physicalCash = parseFloat(document.getElementById("closePhysicalCashInput")?.value) || 0;
+      const myTxns = getTodayFastTransactions();
+
+      let autoPurTotal = 0;
+      let autoExpTotal = 0;
+      let autoMadaTotal = 0;
+      let purRows = [];
+      let expRows = [];
+
+      myTxns.forEach(t => {
+        const cashAmt = Math.abs(parseFloat(t.cash_amount) || 0);
+        const bankAmt = Math.abs(parseFloat(t.bank_amount) || 0);
+
+        if (t.type === 'purchase' && cashAmt > 0) {
+          autoPurTotal += cashAmt;
+          purRows.push({ name: t.party_name, amt: cashAmt });
+        } else if ((t.type === 'expense' || t.type === 'salary') && cashAmt > 0) {
+          autoExpTotal += cashAmt;
+          expRows.push({ name: t.party_name, amt: cashAmt });
+        }
+
+        if (t.type === 'sale' && bankAmt > 0) {
+          autoMadaTotal += bankAmt;
+        }
+      });
+
+      let manualExtraTotal = 0;
+      let extraRows = [];
+      manualClosingExtras.forEach(e => {
+        const amt = parseFloat(e.amount) || 0;
+        if (amt > 0) {
+          manualExtraTotal += amt;
+          extraRows.push({ name: e.desc || 'അധിക ചിലവ്', amt: amt });
+        }
+      });
+
+      const totalCashBiz = physicalCash + autoPurTotal + autoExpTotal + manualExtraTotal;
+      const grandTotalBiz = totalCashBiz + autoMadaTotal;
+
+      return {
+        shopName,
+        curDate,
+        handoverCash: physicalCash,
+        purRows,
+        autoPurTotal,
+        expRows,
+        autoExpTotal,
+        extraRows,
+        manualExtraTotal,
+        totalCashBiz,
+        autoMadaTotal,
+        grandTotalBiz
+      };
+    }
+
+    function printThermalReceipt() {
+      const d = generateReceiptPlainTextData();
+      const container = document.getElementById("thermalReceiptContainer");
+
+      let receiptHtml = `
+        <div style="text-align:center;">
+          ================================<br>
+          <b>ALNASSR QUICK POS CLOSING</b><br>
+          തീയതി: ${d.curDate} | ശാഖ: ${d.shopName}<br>
+          ================================
+        </div>
+        <br>
+        <div>
+          <b>കൗണ്ടർ ക്യാഷ് കൈമാറ്റം:</b><br>
+          മാനേജർക്ക് നൽകിയ ക്യാഷ് : ${d.handoverCash.toFixed(2)}<br>
+          --------------------------------
+        </div>
+      `;
+
+      if (d.purRows.length > 0) {
+        receiptHtml += `<div><b>ഡ്രോയർ ക്യാഷ് പർച്ചേസ്:</b><br>`;
+        d.purRows.forEach(r => {
+          receiptHtml += `- ${r.name.substring(0, 16)} : ${r.amt.toFixed(2)}<br>`;
+        });
+        receiptHtml += `ആകെ പർച്ചേസ് : ${d.autoPurTotal.toFixed(2)}<br>--------------------------------</div>`;
+      }
+
+      if (d.expRows.length > 0) {
+        receiptHtml += `<div><b>ഡ്രോയർ ചിലവുകൾ:</b><br>`;
+        d.expRows.forEach(r => {
+          receiptHtml += `- ${r.name.substring(0, 16)} : ${r.amt.toFixed(2)}<br>`;
+        });
+        receiptHtml += `ആകെ ചിലവുകൾ : ${d.autoExpTotal.toFixed(2)}<br>--------------------------------</div>`;
+      }
+
+      if (d.extraRows.length > 0) {
+        receiptHtml += `<div><b>അധിക ചിലവ് & മാനേജർ:</b><br>`;
+        d.extraRows.forEach(r => {
+          receiptHtml += `- ${r.name.substring(0, 16)} : ${r.amt.toFixed(2)}<br>`;
+        });
+        receiptHtml += `ആകെ അധികം : ${d.manualExtraTotal.toFixed(2)}<br>--------------------------------</div>`;
+      }
+
+      receiptHtml += `
+        <div>
+          <b>ഇന്നത്തെ ആകെ ബിസിനസ്സ്:</b><br>
+          ആകെ ക്യാഷ് കച്ചവടം : ${d.totalCashBiz.toFixed(2)}<br>
+          ആകെ ബാങ്ക് (മാദ) : ${d.autoMadaTotal.toFixed(2)}<br>
+          --------------------------------<br>
+          <b>ആകെ ടോട്ടൽ ബിസിനസ്സ് : ${d.grandTotalBiz.toFixed(2)}</b><br>
+          ================================<br>
+          റിപ്പോർട്ട്: ക്യാഷ്യർ
+        </div>
+      `;
+
+      container.innerHTML = receiptHtml;
+      container.classList.remove("hidden");
+      window.print();
+      container.classList.add("hidden");
+    }
+
+    function sendClosingWhatsAppReport() {
+      const d = generateReceiptPlainTextData();
+
+      let waText = `*ALNASSR QUICK POS - DAILY CLOSING REPORT*\n` +
+                   `തീയതി: ${d.curDate} | ഷോപ്പ്: ${d.shopName}\n` +
+                   `--------------------------------\n` +
+                   `*കൗണ്ടർ ക്യാഷ് കൈമാറ്റം:*\n` +
+                   `*മാനേജർക്ക് നൽകിയ ക്യാഷ്: ${d.handoverCash.toFixed(2)}*\n` +
+                   `--------------------------------\n`;
+
+      if (d.purRows.length > 0) {
+        waText += `*ഡ്രോയർ ക്യാഷ് പർച്ചേസ്:*\n`;
+        d.purRows.forEach(r => { waText += `  ▪️ ${r.name}: ${r.amt.toFixed(2)}\n`; });
+        waText += `  ആകെ പർച്ചേസ്: ${d.autoPurTotal.toFixed(2)}\n` +
+                  `--------------------------------\n`;
+      }
+
+      if (d.expRows.length > 0) {
+        waText += `*ഡ്രോയർ ക്യാഷ് ചിലവുകൾ:*\n`;
+        d.expRows.forEach(r => { waText += `  ▪️ ${r.name}: ${r.amt.toFixed(2)}\n`; });
+        waText += `  ആകെ ചിലവുകൾ: ${d.autoExpTotal.toFixed(2)}\n` +
+                  `--------------------------------\n`;
+      }
+
+      if (d.extraRows.length > 0) {
+        waText += `*അധിക ചിലവ് & മാനേജർ വാങ്ങിയത്:*\n`;
+        d.extraRows.forEach(r => { waText += `  ▪️ ${r.name}: ${r.amt.toFixed(2)}\n`; });
+        waText += `  ആകെ അധിക ചിലവുകൾ: ${d.manualExtraTotal.toFixed(2)}\n` +
+                  `--------------------------------\n`;
+      }
+
+      waText += `*ഇന്നത്തെ ആകെ ബിസിനസ്സ് സംഗ്രഹം:*\n` +
+                `  ▪️ ആകെ ക്യാഷ് കച്ചവടം: ${d.totalCashBiz.toFixed(2)}\n` +
+                `  ▪️ ആകെ ബാങ്ക് (മാദ): ${d.autoMadaTotal.toFixed(2)}\n` +
+                `*ആകെ ടോട്ടൽ: ${d.grandTotalBiz.toFixed(2)}*\n` +
+                `--------------------------------\n` +
+                `തയ്യാറാക്കിയത്: ക്യാഷ്യർ`;
+
+      window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(waText), '_blank');
+    }
+  </script>
+</body>
+</html>

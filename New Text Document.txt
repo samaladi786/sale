@@ -1,0 +1,8 @@
+mobile
+pos core
+pos repor
+mainfst
+config
+sw
+python -m http.server 8000
+http://localhost:8000/mobile.html

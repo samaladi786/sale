@@ -1,0 +1,50 @@
+const CACHE_NAME = 'alnassr-pos-cache-v3.2';
+const ASSETS_TO_CACHE = [
+  './',
+  './index.html',
+  './mobile.html',
+  './master.html',
+  './config.js',
+  './manifest.json',
+  './pos-core.js',
+  './pos-reports.js',
+  './icon-192.png',
+  './icon-512.png',
+  './shop1.png',
+  './shop2.png',
+  './shop3.png',
+  './shop4.png' // <-- ഇതാണ് പുതുതായി ചേർത്തത്
+];
+
+// ഫയലുകൾ കാഷെയിലേക്ക് സൂക്ഷിക്കുന്നു
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(ASSETS_TO_CACHE);
+    }).then(() => self.skipWaiting())
+  );
+});
+
+// പഴയ കാഷെ ക്ലിയർ ചെയ്യുന്നു
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+      );
+    }).then(() => self.clients.claim())
+  );
+});
+
+// നെറ്റ് ഇല്ലെങ്കിലും കാഷെയിൽ നിന്ന് ഫയൽ തുറക്കുന്നു (Offline First)
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      return cachedResponse || fetch(event.request).catch(() => {
+        if (event.request.mode === 'navigate') {
+          return caches.match('./mobile.html');
+        }
+      });
+    })
+  );
+});
