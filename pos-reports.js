@@ -1,5 +1,6 @@
 // ========================================================
-// ALNASSR QUICK POS - REPORTS & UTILITIES ENGINE (pos-reports.js)
+// ALNASSR QUICK POS - ACCURATE SALARY ACCRUAL & REPORTING
+// File: pos-reports.js
 // ========================================================
 
 var currentReportMode = 'daily';
@@ -170,7 +171,7 @@ function onReportDateChanged() { renderReportData('daily'); }
 function onReportMonthChanged() { renderReportData('monthly'); }
 
 // ========================================================
-// 2. REPORT DATA RENDERER (COMBINED CASH+BANK FOR MONTHLY)
+// 2. REPORT DATA RENDERER (ACCURATE HISTORICAL AS-OF-DATE)
 // ========================================================
 function renderReportData(mode) {
   const { txns, custs, vends, emps, exps, loans, opSettings } = getMasterData();
@@ -216,7 +217,6 @@ function renderReportData(mode) {
   };
   const isUpToCutoff = (d) => parseStandardDate(d) <= periodEndDate;
 
-  // ആ തീയതി വരെയുള്ള ബാക്കികൾ കണക്കുകൂട്ടുന്നു
   function getCustomerAsOfBalance(cust) {
     if (!cust) return 0;
     let bal = parseFloat(cust.opening_balance) || 0;
@@ -261,6 +261,7 @@ function renderReportData(mode) {
     return Math.round(bal * 100) / 100;
   }
 
+  // ★ തിരുത്തിയ സാലറി കാൽക്കുലേഷൻ: മാസാവസാനത്തിൽ തന്നെ സാലറി അർഹതയായി മാറും ★
   function getStaffPendingAsOf(emp) {
     if (!emp) return 0;
     let monthlySalary = parseFloat(emp.monthly_salary) || 0;
@@ -274,12 +275,18 @@ function renderReportData(mode) {
     }
 
     let accrued = baseAdv;
-    if (targetD >= joinD && monthlySalary > 0) {
+    if (monthlySalary > 0) {
       let k = 0;
       while (true) {
-        let nextCycle = new Date(joinD.getFullYear(), joinD.getMonth() + k + 1, joinD.getDate());
-        if (targetD >= nextCycle) k++;
-        else break;
+        // സൈക്കിൾ പൂർത്തിയാകുന്നത് അടുത്ത മാസം തുടങ്ങുന്നതിന് 1 ദിവസം മുൻപാണ് (ഉദാ: ഒക്ടോബർ 31)
+        let nextCycleStart = new Date(joinD.getFullYear(), joinD.getMonth() + k + 1, joinD.getDate());
+        let cycleEnd = new Date(nextCycleStart.getFullYear(), nextCycleStart.getMonth(), nextCycleStart.getDate() - 1);
+        
+        if (targetD >= cycleEnd) {
+          k++;
+        } else {
+          break;
+        }
       }
       accrued += (k * monthlySalary);
     }
@@ -314,7 +321,6 @@ function renderReportData(mode) {
     return Math.round(bal * 100) / 100;
   }
 
-  // ലിക്വിഡ് ഫണ്ടും ബാങ്ക് ഇടപാടുകളും കണക്കുകൂട്ടുന്നു
   let openingLiquidCash = opSettings.openingCash;
   let openingLiquidBank = opSettings.openingBank;
   let closingLiquidCash = opSettings.openingCash;
@@ -335,7 +341,6 @@ function renderReportData(mode) {
       closingLiquidBank += (parseFloat(t.bank_amount) || 0);
     }
 
-    // ആ മാസത്തെ ബാങ്ക് വരവും ചിലവും പ്രത്യേകം കണക്കാക്കുന്നു
     if (isInPeriod(tDate)) {
       let bAmt = parseFloat(t.bank_amount) || 0;
       if (t.type === 'sale') {
@@ -355,7 +360,6 @@ function renderReportData(mode) {
     }
   });
 
-  // മാപ്പുകൾ തയ്യാറാക്കുന്നു
   let creditSalesMap = {};
   custs.forEach(c => {
     if (c && (c.type || '').toLowerCase() === 'credit') {
@@ -513,7 +517,6 @@ function renderReportData(mode) {
     }
   });
 
-  // ടോട്ടലുകൾ
   let totalCustOutstanding = 0;
   custs.forEach(c => { if (c && (c.type || '').toLowerCase() === 'credit') totalCustOutstanding += getCustomerAsOfBalance(c); });
 
@@ -533,7 +536,6 @@ function renderReportData(mode) {
   const vatInput = totPur > 0 ? (totPur - (totPur / 1.15)) : 0;
   const vatNet = vatOutput - vatInput;
 
-  // ഹെഡർ കാർഡുകൾ അപ്‌ഡേറ്റ് ചെയ്യുന്നു
   const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
   setVal("repOpeningLiquidBal", totalOpeningLiquid.toLocaleString('en-IN'));
   setVal("repTotalSale", totSale.toLocaleString('en-IN'));
@@ -544,7 +546,6 @@ function renderReportData(mode) {
   setVal("repSalaryBal", totalEmpPending.toLocaleString('en-IN'));
   setVal("repLiquidBal", totalClosingLiquid.toLocaleString('en-IN'));
 
-  // 'ലോൺ ബാക്കി' കാർഡ് ഉണ്ടെങ്കിൽ അപ്‌ഡേറ്റ് ചെയ്യുന്നു, ഇല്ലെങ്കിൽ ഡൈനാമിക്കായി ചേർക്കുന്നു
   let loanBalEl = document.getElementById("repLoanBal");
   if (!loanBalEl) {
     const grid = document.querySelector("#reportPrintContainer .grid-cols-4") || document.querySelector("#reportPrintContainer .grid");
@@ -567,7 +568,6 @@ function renderReportData(mode) {
   setVal("salesGrandBadge", `ആകെ: ${totSale.toLocaleString('en-IN')}`);
   setVal("purchaseGrandBadge", `ആകെ: ${totPur.toLocaleString('en-IN')}`);
 
-  // മന്ത്ലി റിപ്പോർട്ടിൽ ബാങ്ക് സമ്മറി ബാനർ ഡൈനാമിക്കായി ചേർക്കുന്നു
   let bankBanner = document.getElementById("monthlyBankSummaryBanner");
   if (!bankBanner) {
     const vatBox = document.getElementById("vatNetPayableText")?.closest(".grid") || document.querySelector(".bg-indigo-50\\/90");
@@ -600,18 +600,14 @@ function renderReportData(mode) {
     }
   }
 
-  // ========================================================
-  // ടേബിളുകൾ നിർമ്മിക്കുന്നു (MONTHLY = COMBINED CASH+BANK)
-  // ========================================================
   const isMonthly = (mode === 'monthly');
 
-  // 1. CASH SALES TABLE
+  // 1. CASH SALES
   const cashSalesArr = Object.values(cashSalesMap);
   let rCSCash = 0, rCSBank = 0, rCSTotal = 0;
   let cashSalesHtml = "";
 
   if (isMonthly) {
-    // മന്ത്ലി: പേര് | ആകെ തുക (2 കോളങ്ങൾ)
     cashSalesHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-emerald-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">പേര്</th><th class="p-1 text-right">ആകെ തുക</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10.5px]">`;
     if (cashSalesArr.length === 0) cashSalesHtml += `<tr><td colspan="2" class="p-1 text-center text-slate-400">ഇടപാടുകൾ ഇല്ല</td></tr>`;
     else {
@@ -622,7 +618,6 @@ function renderReportData(mode) {
     }
     cashSalesHtml += `</tbody><tfoot><tr class="bg-emerald-50 text-emerald-950 font-black border-t text-[10.5px]"><td class="p-1 text-left uppercase">ആകെ:</td><td class="p-1 text-right text-slate-950 font-black">${rCSTotal.toLocaleString('en-IN')}</td></tr></tfoot></table>`;
   } else {
-    // ഡെയ്‌ലി: പേര് | ക്യാഷ് | ബാങ്ക് | ആകെ (4 കോളങ്ങൾ)
     cashSalesHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-emerald-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">പേര്</th><th class="p-1">ക്യാഷ്</th><th class="p-1">ബാങ്ക്</th><th class="p-1 text-right">ആകെ</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10.5px]">`;
     if (cashSalesArr.length === 0) cashSalesHtml += `<tr><td colspan="4" class="p-1 text-center text-slate-400">ഇടപാടുകൾ ഇല്ല</td></tr>`;
     else {
@@ -636,7 +631,7 @@ function renderReportData(mode) {
   const repCS = document.getElementById("repCashSalesList");
   if (repCS) repCS.innerHTML = cashSalesHtml;
 
-  // 2. CREDIT SALES TABLE
+  // 2. CREDIT SALES
   let creditSalesArr = Object.values(creditSalesMap).map(s => {
     s.closingDue = getCustomerAsOfBalance(s.custObj || { name: s.name, opening_balance: 0 });
     return s;
@@ -647,7 +642,6 @@ function renderReportData(mode) {
   let creditSalesHtml = "";
 
   if (isMonthly) {
-    // മന്ത്ലി: പേര് | അടച്ച തുക (ക്യാഷ്+ബാങ്ക്) | ക്രെഡിറ്റ് ബില്ല് | തരാനുള്ള ബാക്കി (4 കോളങ്ങൾ)
     creditSalesHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-amber-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">പേര്</th><th class="p-1">അടച്ച തുക</th><th class="p-1">ക്രെഡിറ്റ് ബില്ല്</th><th class="p-1 text-right bg-amber-200/80">തരാനുള്ള ബാക്കി</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10px]">`;
     if (creditSalesArr.length === 0) creditSalesHtml += `<tr><td colspan="4" class="p-1 text-center text-slate-400">ഇടപാടുകൾ / കുടിശ്ശികകൾ ഇല്ല</td></tr>`;
     else {
@@ -659,7 +653,6 @@ function renderReportData(mode) {
     }
     creditSalesHtml += `</tbody><tfoot><tr class="bg-amber-50 text-amber-950 font-black border-t text-[10px]"><td class="p-1 text-left uppercase">ആകെ:</td><td class="p-1 text-emerald-800 font-black">${rCrSTotPaid.toLocaleString('en-IN')}</td><td class="p-1 font-black text-amber-900">${rCrSCr.toLocaleString('en-IN')}</td><td class="p-1 text-right text-rose-900 font-black">${rCrSTotDue.toLocaleString('en-IN')}</td></tr></tfoot></table>`;
   } else {
-    // ഡെയ്‌ലി: പേര് | ക്യാഷ് | ബാങ്ക് | ക്രെഡിറ്റ് | തരാനുള്ള ബാക്കി (5 കോളങ്ങൾ)
     creditSalesHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-amber-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">പേര്</th><th class="p-1">ക്യാഷ്</th><th class="p-1">ബാങ്ക്</th><th class="p-1">ക്രെഡിറ്റ്</th><th class="p-1 text-right bg-amber-200/80">തരാനുള്ള ബാക്കി</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10px]">`;
     if (creditSalesArr.length === 0) creditSalesHtml += `<tr><td colspan="5" class="p-1 text-center text-slate-400">ഇടപാടുകൾ / കുടിശ്ശികകൾ ഇല്ല</td></tr>`;
     else {
@@ -673,13 +666,12 @@ function renderReportData(mode) {
   const repCrS = document.getElementById("repCreditSalesList");
   if (repCrS) repCrS.innerHTML = creditSalesHtml;
 
-  // 3. CASH PURCHASES TABLE
+  // 3. CASH PURCHASES
   const cashPurArr = Object.values(cashPurMap);
   let rCPCash = 0, rCPBank = 0, rCPTotal = 0;
   let cashPurHtml = "";
 
   if (isMonthly) {
-    // മന്ത്ലി: വെണ്ടർ | ആകെ തുക (2 കോളങ്ങൾ)
     cashPurHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-blue-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">വെണ്ടർ</th><th class="p-1 text-right">ആകെ തുക</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10.5px]">`;
     if (cashPurArr.length === 0) cashPurHtml += `<tr><td colspan="2" class="p-1 text-center text-slate-400">ഇടപാടുകൾ ഇല്ല</td></tr>`;
     else {
@@ -690,7 +682,6 @@ function renderReportData(mode) {
     }
     cashPurHtml += `</tbody><tfoot><tr class="bg-blue-50 text-blue-950 font-black border-t text-[10.5px]"><td class="p-1 text-left uppercase">ആകെ:</td><td class="p-1 text-right text-slate-950 font-black">${rCPTotal.toLocaleString('en-IN')}</td></tr></tfoot></table>`;
   } else {
-    // ഡെയ്‌ലി: വെണ്ടർ | ക്യാഷ് | ബാങ്ക് | ആകെ (4 കോളങ്ങൾ)
     cashPurHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-blue-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">വെണ്ടർ</th><th class="p-1">ക്യാഷ്</th><th class="p-1">ബാങ്ക്</th><th class="p-1 text-right">ആകെ</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10.5px]">`;
     if (cashPurArr.length === 0) cashPurHtml += `<tr><td colspan="4" class="p-1 text-center text-slate-400">ഇടപാടുകൾ ഇല്ല</td></tr>`;
     else {
@@ -704,7 +695,7 @@ function renderReportData(mode) {
   const repCP = document.getElementById("repCashPurchasesList");
   if (repCP) repCP.innerHTML = cashPurHtml;
 
-  // 4. CREDIT PURCHASES TABLE
+  // 4. CREDIT PURCHASES
   let creditPurArr = Object.values(creditPurMap).map(p => {
     p.closingDue = getVendorAsOfBalance(p.vendObj || { name: p.name, opening_balance: 0 });
     return p;
@@ -715,7 +706,6 @@ function renderReportData(mode) {
   let creditPurHtml = "";
 
   if (isMonthly) {
-    // മന്ത്ലി: വെണ്ടർ | നൽകിയ തുക (ക്യാഷ്+ബാങ്ക്) | ക്രെഡിറ്റ് പർച്ചേസ് | കൊടുക്കാനുള്ള ബാക്കി (4 കോളങ്ങൾ)
     creditPurHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-indigo-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">വെണ്ടർ</th><th class="p-1">നൽകിയ തുക</th><th class="p-1">ക്രെഡിറ്റ് പർച്ചേസ്</th><th class="p-1 text-right bg-indigo-200/80">കൊടുക്കാനുള്ള ബാക്കി</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10px]">`;
     if (creditPurArr.length === 0) creditPurHtml += `<tr><td colspan="4" class="p-1 text-center text-slate-400">ഇടപാടുകൾ / ബാധ്യതകൾ ഇല്ല</td></tr>`;
     else {
@@ -727,7 +717,6 @@ function renderReportData(mode) {
     }
     creditPurHtml += `</tbody><tfoot><tr class="bg-indigo-50 text-indigo-950 font-black border-t text-[10px]"><td class="p-1 text-left uppercase">ആകെ:</td><td class="p-1 text-blue-900 font-black">${rCrPTotPaid.toLocaleString('en-IN')}</td><td class="p-1 font-black text-indigo-950">${rCrPCr.toLocaleString('en-IN')}</td><td class="p-1 text-right text-rose-900 font-black">${rCrPTotPayable.toLocaleString('en-IN')}</td></tr></tfoot></table>`;
   } else {
-    // ഡെയ്‌ലി: വെണ്ടർ | ക്യാഷ് | ബാങ്ക് | ക്രെഡിറ്റ് | കൊടുക്കാനുള്ള ബാക്കി (5 കോളങ്ങൾ)
     creditPurHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-indigo-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">വെണ്ടർ</th><th class="p-1">ക്യാഷ്</th><th class="p-1">ബാങ്ക്</th><th class="p-1">ക്രെഡിറ്റ്</th><th class="p-1 text-right bg-indigo-200/80">കൊടുക്കാനുള്ള ബാക്കി</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10px]">`;
     if (creditPurArr.length === 0) creditPurHtml += `<tr><td colspan="5" class="p-1 text-center text-slate-400">ഇടപാടുകൾ / ബാധ്യതകൾ ഇല്ല</td></tr>`;
     else {
@@ -752,7 +741,6 @@ function renderReportData(mode) {
   let salHtml = "";
 
   if (isMonthly) {
-    // മന്ത്ലി: സ്റ്റാഫ് | നൽകിയ ശമ്പളം (ക്യാഷ്+ബാങ്ക്) | സാലറി ബാക്കി (3 കോളങ്ങൾ)
     salHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-purple-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">സ്റ്റാഫ്</th><th class="p-1">നൽകിയ ശമ്പളം</th><th class="p-1 text-right bg-purple-200/80">സാലറി ബാക്കി</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10px]">`;
     if (salArr.length === 0) salHtml += `<tr><td colspan="3" class="p-1 text-center text-slate-400">സാലറി ഇടപാടുകൾ / കുടിശ്ശിക ഇല്ല</td></tr>`;
     else {
@@ -763,7 +751,6 @@ function renderReportData(mode) {
     }
     salHtml += `</tbody><tfoot><tr class="bg-purple-50 text-purple-950 font-black border-t text-[10px]"><td class="p-1 text-left uppercase">ആകെ:</td><td class="p-1 text-purple-950 font-black">${rSalTotal.toLocaleString('en-IN')}</td><td class="p-1 text-right font-black text-purple-900">${rSalTotPending.toLocaleString('en-IN')}</td></tr></tfoot></table>`;
   } else {
-    // ഡെയ്‌ലി: സ്റ്റാഫ് | ക്യാഷ് | ബാങ്ക് | ആകെ | സാലറി ബാക്കി (5 കോളങ്ങൾ)
     salHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-purple-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">സ്റ്റാഫ്</th><th class="p-1">ക്യാഷ്</th><th class="p-1">ബാങ്ക്</th><th class="p-1">ആകെ</th><th class="p-1 text-right bg-purple-200/80">സാലറി ബാക്കി</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10px]">`;
     if (salArr.length === 0) salHtml += `<tr><td colspan="5" class="p-1 text-center text-slate-400">സാലറി ഇടപാടുകൾ / കുടിശ്ശിക ഇല്ല</td></tr>`;
     else {
@@ -788,7 +775,6 @@ function renderReportData(mode) {
   let expHtml = "";
 
   if (isMonthly) {
-    // മന്ത്ലി: ഇനം | നൽകിയ തുക (ക്യാഷ്+ബാങ്ക്) | ബില്ല് ബാക്കി (3 കോളങ്ങൾ)
     expHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-amber-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">ഇനം</th><th class="p-1">നൽകിയ തുക</th><th class="p-1 text-right bg-amber-200/80">ബില്ല് ബാക്കി</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10px]">`;
     if (expArr.length === 0) expHtml += `<tr><td colspan="3" class="p-1 text-center text-slate-400">ചിലവുകൾ ഇല്ല</td></tr>`;
     else {
@@ -799,7 +785,6 @@ function renderReportData(mode) {
     }
     expHtml += `</tbody><tfoot><tr class="bg-amber-50 text-amber-950 font-black border-t text-[10px]"><td class="p-1 text-left uppercase">ആകെ:</td><td class="p-1 text-slate-950 font-black">${rExpTotal.toLocaleString('en-IN')}</td><td class="p-1 text-right font-black text-amber-900">${rExpTotDue.toLocaleString('en-IN')}</td></tr></tfoot></table>`;
   } else {
-    // ഡെയ്‌ലി: ഇനം | ക്യാഷ് | ബാങ്ക് | ആകെ | ബില്ല് ബാക്കി (5 കോളങ്ങൾ)
     expHtml = `<table class="w-full text-center border-collapse"><thead><tr class="bg-amber-100 text-slate-900 font-black border-b text-[10px]"><th class="p-1 text-left">ഇനം</th><th class="p-1">ക്യാഷ്</th><th class="p-1">ബാങ്ക്</th><th class="p-1">ആകെ</th><th class="p-1 text-right bg-amber-200/80">ബില്ല് ബാക്കി</th></tr></thead><tbody class="divide-y divide-slate-100 font-bold text-[10px]">`;
     if (expArr.length === 0) expHtml += `<tr><td colspan="5" class="p-1 text-center text-slate-400">ചിലവുകൾ ഇല്ല</td></tr>`;
     else {
@@ -813,7 +798,7 @@ function renderReportData(mode) {
   const repExp = document.getElementById("repExpensesList");
   if (repExp) repExp.innerHTML = expHtml;
 
-  // 7. LOANS TABLE (വാങ്ങിയത് | തിരിച്ചടവ് | കൊടുക്കാനുള്ള ബാക്കി)
+  // 7. LOANS TABLE
   let loansArr = Object.values(loansMap).map(l => {
     l.balDue = getLoanAsOfBalance(l.loanObj || { name: l.name, opening_balance: 0 });
     return l;
@@ -1226,15 +1211,17 @@ function generateStatement() {
           }
         });
 
+        // ആ മാസം അവസാനിച്ച തീയതി വരെയുള്ള കൃത്യമായ സാലറി ബാക്കി
         let pendingBal = 0;
         let accrued = parseFloat(emp.opening_advance || emp.opening_balance) || 0;
         let joinD = parseToDateObj(emp.joining_date || "2026-01-01");
         let targetD = parseToDateObj(toDate);
-        if (targetD >= joinD && monthlySalary > 0) {
+        if (monthlySalary > 0) {
           let k = 0;
           while (true) {
-            let nextCycle = new Date(joinD.getFullYear(), joinD.getMonth() + k + 1, joinD.getDate());
-            if (targetD >= nextCycle) k++;
+            let nextCycleStart = new Date(joinD.getFullYear(), joinD.getMonth() + k + 1, joinD.getDate());
+            let cycleEnd = new Date(nextCycleStart.getFullYear(), nextCycleStart.getMonth(), nextCycleStart.getDate() - 1);
+            if (targetD >= cycleEnd) k++;
             else break;
           }
           accrued += (k * monthlySalary);
@@ -1265,15 +1252,16 @@ function generateStatement() {
         let baseAdv = parseFloat(emp.opening_advance || emp.opening_balance) || 0;
         let joinD = parseToDateObj(emp.joining_date || "2026-01-01");
         let priorDate = new Date(parseInt(monthVal.split('-')[0]), parseInt(monthVal.split('-')[1]) - 1, 0);
-        let priorStr = `${priorDate.getFullYear()}-${String(priorDate.getMonth() + 1).padStart(2, '0')}-${String(priorDate.getDate()).padStart(2, '0')}`;
+        let targetPrior = parseToDateObj(priorDate);
 
+        // കഴിഞ്ഞ മാസം അവസാനിച്ച തീയതി വരെയുള്ള ഓപ്പണിംഗ്
         let priorAccrued = baseAdv;
-        let targetPrior = parseToDateObj(priorStr);
-        if (targetPrior >= joinD && monthlySalary > 0) {
+        if (monthlySalary > 0) {
           let k = 0;
           while (true) {
-            let nextCycle = new Date(joinD.getFullYear(), joinD.getMonth() + k + 1, joinD.getDate());
-            if (targetPrior >= nextCycle) k++;
+            let nextCycleStart = new Date(joinD.getFullYear(), joinD.getMonth() + k + 1, joinD.getDate());
+            let cycleEnd = new Date(nextCycleStart.getFullYear(), nextCycleStart.getMonth(), nextCycleStart.getDate() - 1);
+            if (targetPrior >= cycleEnd) k++;
             else break;
           }
           priorAccrued += (k * monthlySalary);
@@ -1288,8 +1276,9 @@ function generateStatement() {
         });
         openingBal = priorAccrued - priorPaid;
 
+        // ആ മാസത്തെ സാലറി മാസത്തിന്റെ അവസാന തീയതിയിൽ തന്നെ ആഡ് ചെയ്യുന്നു
         totalSalesOrBills = monthlySalary;
-        statementRows.push({ date: fromDate, desc: `മാസ ശമ്പളം (Monthly Accrued Salary)`, cash: 0, bank: 0, bill: monthlySalary });
+        statementRows.push({ date: toDate, desc: `മാസ ശമ്പളം (Monthly Salary Accrued)`, cash: 0, bank: 0, bill: monthlySalary });
 
         allTx.forEach(t => {
           if (t && t.type === 'salary' && cleanPartyName(t.party_name).includes(cleanEmpName)) {
