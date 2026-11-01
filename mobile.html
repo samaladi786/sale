@@ -73,7 +73,7 @@
       page-break-inside: avoid;
     }
 
-    /* COMPACT BOLD A4 PRINT STYLES - OPTION A (ENHANCED READABILITY) */
+    /* COMPACT BOLD A4 PRINT STYLES */
     @media print {
       @page {
         size: A4 portrait;
@@ -200,7 +200,6 @@
   <header id="mobileAppHeader" class="bg-slate-900 text-white sticky top-0 z-40 shadow-md border-b border-white/10 px-3 py-2.5 transition-all duration-300">
     <div class="flex items-center justify-between gap-2">
       
-      <!-- LEFT: SHOP LOGO & SHOP SELECTOR DROPDOWN -->
       <div class="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
         <div id="shopLogoBox" class="w-9 h-9 rounded-xl bg-white/10 p-0.5 flex items-center justify-center border border-white/20 shrink-0 overflow-hidden shadow-sm">
           <img id="shopLogoImg" src="icon-192.png" alt="Shop Logo" class="w-full h-full object-contain rounded-lg" onerror="this.style.display='none'; document.getElementById('shopDefaultIcon').classList.remove('hidden');" />
@@ -219,7 +218,6 @@
         </div>
       </div>
 
-      <!-- RIGHT: ACTION CONTROLS -->
       <div class="flex items-center gap-1.5 shrink-0">
         <button onclick="openMasterModal()" title="മാസ്റ്റർ" class="hidden lg:flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold touch-btn cursor-pointer">
           <i data-lucide="database" class="w-3.5 h-3.5 text-emerald-400"></i>
@@ -340,7 +338,7 @@
         </div>
       </div>
 
-      <!-- TAB 3: EXPENSE, SALARY & LOAN ENTRY (WITH DEDICATED LOAN WORKSPACE) -->
+      <!-- TAB 3: EXPENSE, SALARY & LOAN ENTRY -->
       <div id="view-expense" class="tab-view hidden space-y-2.5">
         <div class="bg-white p-4 rounded-3xl border border-amber-200 shadow-sm space-y-3 h-full flex flex-col justify-between">
           <div class="space-y-3">
@@ -1057,7 +1055,7 @@
     </div>
   </div>
 
-  <!-- 8. NEW LOAN LENDER MODAL (PHOTO EXACT DESIGN) -->
+  <!-- 8. NEW LOAN LENDER MODAL -->
   <div id="newLoanModal" class="fixed inset-0 bg-slate-950/75 flex items-center justify-center z-[99999] hidden p-4 backdrop-blur-sm">
     <div class="bg-white rounded-3xl max-w-xs w-full p-5 shadow-2xl border space-y-3.5">
       <div class="flex items-center justify-between border-b pb-2">
@@ -1403,7 +1401,15 @@
     </div>
   </div>
 
-  <!-- UI CONTROLLER HELPERS FOR LOANS -->
+  <!-- ======================================================== -->
+  <!-- EXTERNAL MODULAR LOGIC ENGINES (MUST LOAD FIRST)          -->
+  <!-- ======================================================== -->
+  <script src="pos-core.js"></script>
+  <script src="pos-reports.js"></script>
+
+  <!-- ======================================================== -->
+  <!-- LOAN CONTROLLER & MODAL OVERRIDES (LOADED AFTER ENGINES) -->
+  <!-- ======================================================== -->
   <script>
     let activeLoanDirection = 'in';
 
@@ -1502,13 +1508,13 @@
         return;
       }
 
-      let loans = window.loansMasterList || [];
+      let loans = window.loansMasterList || (typeof loansMasterList !== 'undefined' ? loansMasterList : []);
       const cleanVal = cleanPartyName(val);
       const matched = loans.find(l => cleanPartyName(l.name) === cleanVal);
 
       if (matched) {
         let liveBal = parseFloat(matched.opening_balance) || 0;
-        let txns = window.transactionsList || [];
+        let txns = window.transactionsList || (typeof transactionsList !== 'undefined' ? transactionsList : []);
         txns.forEach(t => {
           if (t && (t.type === 'loan_in' || t.type === 'loan_out')) {
             let tPartyClean = cleanPartyName(t.party_name);
@@ -1582,8 +1588,10 @@
       }
 
       const isLoanIn = (activeLoanDirection === 'in');
+      const curDate = document.getElementById("mobileFilterDate")?.value || (typeof getSaudiBusinessDate === 'function' ? getSaudiBusinessDate() : new Date().toISOString().split('T')[0]);
+
       const payload = {
-        date: typeof getSelectedDate === 'function' ? getSelectedDate() : new Date().toISOString().split('T')[0],
+        date: curDate,
         type: isLoanIn ? 'loan_in' : 'loan_out',
         party_name: `[Loan: ${lender}] ${note ? '- ' + note : ''}`.trim(),
         cash_amount: isLoanIn ? cash : -cash,
@@ -1599,7 +1607,7 @@
       if (!navigator.onLine || !window.supabaseClient) {
         if (typeof pushToOfflineQueue === 'function') pushToOfflineQueue(payload);
         if (typeof renderQuickTotalsAndRecent === 'function') renderQuickTotalsAndRecent();
-        alert(isLoanIn ? "⚠️ ഓഫ്‍ലൈൻ മോഡ്: ലോൺ വാങ്ങിയത് ഫോണിൽ സേവ് ചെയ്തു (+Cash)!" : "⚠️ ഓഫ്‍ലൈൻ മോഡ്: ലോൺ തിരിച്ചടച്ചത് ഫോണിൽ സേവ് ചെയ്തു (-Cash)!");
+        alert(isLoanIn ? "⚠️ ഓഫ്‍ലൈൻ മോഡ്: ലോൺ വാങ്ങിയത് സേവ് ചെയ്തു (+Cash)!" : "⚠️ ഓഫ്‍ലൈൻ മോഡ്: ലോൺ തിരിച്ചടച്ചത് സേവ് ചെയ്തു (-Cash)!");
       } else {
         const { data, error } = await window.supabaseClient.from('transactions').insert([payload]).select();
         if (error) {
@@ -1619,10 +1627,220 @@
       document.getElementById("loanPartyInput").value = "";
       onLoanPartySelected();
     }
-  </script>
 
-  <!-- EXTERNAL MODULAR LOGIC ENGINES -->
-  <script src="pos-core.js"></script>
-  <script src="pos-reports.js"></script>
+    // ========================================================
+    // MODAL LOAN TABLE & QUICK CARD OVERRIDES
+    // ========================================================
+    function renderLoansModalTable() {
+      const container = document.getElementById("modalLoansList");
+      if (!container) return;
+
+      const selDate = document.getElementById("mobileFilterDate")?.value || (typeof getSaudiBusinessDate === 'function' ? getSaudiBusinessDate() : new Date().toISOString().split('T')[0]);
+      const txns = window.transactionsList || (typeof transactionsList !== 'undefined' ? transactionsList : []);
+
+      const cleanDateStr = (d) => String(d || '').split('T')[0].split(' ')[0].replace(/\//g, '-').trim();
+
+      const todaysLoans = txns.filter(t => {
+        return t && (t.type === 'loan_in' || t.type === 'loan_out') && cleanDateStr(t.date) === cleanDateStr(selDate);
+      });
+
+      if (todaysLoans.length === 0) {
+        container.innerHTML = `<div class="p-2.5 text-center text-slate-400 text-xs font-bold">ഇന്ന് ലോൺ ഇടപാടുകൾ ഒന്നും ഇല്ല</div>`;
+        return;
+      }
+
+      let totalLoanInDay = 0;
+      let totalLoanOutDay = 0;
+
+      let rowsHtml = todaysLoans.map(t => {
+        const isIn = (t.type === 'loan_in');
+        const cash = Math.abs(parseFloat(t.cash_amount) || 0);
+        const bank = Math.abs(parseFloat(t.bank_amount) || 0);
+        const total = cash + bank;
+
+        if (isIn) totalLoanInDay += total;
+        else totalLoanOutDay += total;
+
+        const typeBadge = isIn 
+          ? '<span class="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-black text-[10px]">+വരവ്</span>' 
+          : '<span class="text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded font-black text-[10px]">-തിരിച്ചടവ്</span>';
+        const party = t.party_name || 'Loan';
+
+        return `
+          <tr class="hover:bg-slate-50 text-xs font-semibold border-b">
+            <td class="p-2 text-left font-bold text-slate-900 truncate" title="${party}">${party}</td>
+            <td class="p-2">${typeBadge}</td>
+            <td class="p-2 text-slate-700">${cash > 0 ? cash : '-'}</td>
+            <td class="p-2 text-slate-700">${bank > 0 ? bank : '-'}</td>
+            <td class="p-2 font-black ${isIn ? 'text-emerald-700' : 'text-rose-700'}">${total}</td>
+            <td class="p-2 text-right whitespace-nowrap">
+              <button type="button" onclick="openEditLoanModal('${t.id}')" title="തിരുത്തുക" class="p-1 text-blue-600 hover:text-blue-800 cursor-pointer font-bold mr-1">✏️</button>
+              <button type="button" onclick="requestPin('${t.id}')" title="ഡിലീറ്റ്" class="p-1 text-rose-600 hover:text-rose-800 cursor-pointer font-bold">🗑️</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      container.innerHTML = `
+        <table class="w-full text-xs text-center border-collapse">
+          <thead>
+            <tr class="bg-purple-100 text-purple-950 font-black border-b">
+              <th class="p-2 text-left">ആൾ</th>
+              <th class="p-2">ഇനം</th>
+              <th class="p-2">ക്യാഷ്</th>
+              <th class="p-2">ബാങ്ക്</th>
+              <th class="p-2">ആകെ</th>
+              <th class="p-2 text-right">⚙️</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-bold">
+            ${rowsHtml}
+          </tbody>
+          <tfoot>
+            <tr class="bg-purple-50 text-purple-950 font-black border-t text-[11px]">
+              <td class="p-2 text-left uppercase" colspan="2">ആകെ ലോൺ:</td>
+              <td colspan="2" class="p-2 text-emerald-800 font-bold">+വരവ്: ${totalLoanInDay}</td>
+              <td class="p-2 text-rose-800 font-black">-തിരിച്ചടവ്: ${totalLoanOutDay}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    }
+
+    // മോഡൽ തുറക്കാനും അടയ്ക്കാനുമുള്ള ഫംഗ്ഷനുകൾ കൃത്യമായി നൽകുന്നു
+    window.openTodayExpenseModal = function() {
+      const m = document.getElementById("todayExpenseModal");
+      if (m) {
+        m.classList.remove("hidden");
+        m.style.display = "flex";
+      }
+      if (typeof renderLoansModalTable === 'function') renderLoansModalTable();
+    };
+
+    window.closeTodayExpenseModal = function() {
+      const m = document.getElementById("todayExpenseModal");
+      if (m) {
+        m.classList.add("hidden");
+        m.style.display = "none";
+      }
+    };
+
+    // ലോൺ എഡിറ്റ് മോഡൽ തുറക്കുന്നു
+    function openEditLoanModal(id) {
+      const txns = window.transactionsList || (typeof transactionsList !== 'undefined' ? transactionsList : []);
+      const txn = txns.find(t => String(t.id) === String(id));
+      if (!txn) return alert("ഇടപാട് കണ്ടെത്താൻ കഴിഞ്ഞില്ല!");
+
+      document.getElementById("editTxnId").value = txn.id;
+      document.getElementById("editTxnDate").value = String(txn.date).split('T')[0];
+      document.getElementById("editTxnParty").value = txn.party_name;
+      document.getElementById("editTxnCash").value = Math.abs(parseFloat(txn.cash_amount) || 0) || "";
+      document.getElementById("editTxnBank").value = Math.abs(parseFloat(txn.bank_amount) || 0) || "";
+
+      const crContainer = document.getElementById("editCreditContainer");
+      if (crContainer) crContainer.classList.add("hidden");
+
+      const modal = document.getElementById("editTransactionModal");
+      if (modal) {
+        modal.classList.remove("hidden");
+        modal.style.display = "flex";
+      }
+    }
+
+    function closeEditModal() {
+      const m = document.getElementById("editTransactionModal");
+      if (m) {
+        m.classList.add("hidden");
+        m.style.display = "none";
+      }
+    }
+
+    // എഡിറ്റ് ചെയ്ത ലോൺ സേവ് ചെയ്യുന്നു
+    const nativeSaveEditedTransaction = window.saveEditedTransaction;
+    window.saveEditedTransaction = async function() {
+      const editId = document.getElementById("editTxnId")?.value;
+      const txns = window.transactionsList || (typeof transactionsList !== 'undefined' ? transactionsList : []);
+      const txn = txns.find(t => String(t.id) === String(editId));
+
+      if (txn && (txn.type === 'loan_in' || txn.type === 'loan_out')) {
+        const newDate = document.getElementById("editTxnDate").value;
+        const newParty = document.getElementById("editTxnParty").value.trim().toUpperCase();
+        const newCash = parseFloat(document.getElementById("editTxnCash").value) || 0;
+        const newBank = parseFloat(document.getElementById("editTxnBank").value) || 0;
+
+        if (newCash <= 0 && newBank <= 0) return alert("തുക നൽകുക!");
+
+        const isIn = (txn.type === 'loan_in');
+        txn.date = newDate;
+        txn.party_name = newParty;
+        txn.cash_amount = isIn ? newCash : -newCash;
+        txn.bank_amount = isIn ? newBank : -newBank;
+        txn.credit_amount = 0;
+
+        localStorage.setItem(`ALNASSR_${window.currentShopId}_TRANSACTIONS`, JSON.stringify(txns));
+
+        if (navigator.onLine && window.supabaseClient) {
+          try {
+            await window.supabaseClient.from('transactions').update({
+              date: txn.date,
+              party_name: txn.party_name,
+              cash_amount: txn.cash_amount,
+              bank_amount: txn.bank_amount
+            }).eq('id', txn.id);
+          } catch (err) {
+            console.warn("Cloud update failed, saved locally:", err);
+          }
+        }
+
+        closeEditModal();
+        if (typeof renderQuickTotalsAndRecent === 'function') renderQuickTotalsAndRecent();
+        if (typeof renderReportData === 'function') renderReportData(window.currentReportMode || 'daily');
+        renderLoansModalTable();
+        alert("ലോൺ വിവരങ്ങൾ വിജയകരമായി അപ്‌ഡേറ്റ് ചെയ്തു!");
+        return;
+      }
+
+      if (typeof nativeSaveEditedTransaction === 'function') {
+        nativeSaveEditedTransaction();
+      }
+    };
+
+    // കാർഡിലെ ആകെ തുകയിൽ ചിലവിനൊപ്പം ലോൺ തിരിച്ചടവ് കൂടി കൂട്ടിച്ചേർക്കുന്നു
+    const nativeRenderQuickTotals = window.renderQuickTotalsAndRecent;
+    window.renderQuickTotalsAndRecent = function() {
+      if (typeof nativeRenderQuickTotals === 'function') {
+        try { nativeRenderQuickTotals(); } catch (e) {}
+      }
+
+      const selDate = document.getElementById("mobileFilterDate")?.value || (typeof getSaudiBusinessDate === 'function' ? getSaudiBusinessDate() : new Date().toISOString().split('T')[0]);
+      const txns = window.transactionsList || (typeof transactionsList !== 'undefined' ? transactionsList : []);
+      const cleanDateStr = (d) => String(d || '').split('T')[0].split(' ')[0].replace(/\//g, '-').trim();
+
+      let dayExpTotal = 0;
+      txns.forEach(t => {
+        if (t && cleanDateStr(t.date) === cleanDateStr(selDate)) {
+          let amt = Math.abs(parseFloat(t.cash_amount) || 0) + Math.abs(parseFloat(t.bank_amount) || 0);
+          if (t.type === 'expense' || t.type === 'salary') {
+            dayExpTotal += amt;
+          } else if (t.type === 'loan_out') {
+            dayExpTotal += amt;
+          }
+        }
+      });
+
+      const expEl = document.getElementById("quickExpTotal");
+      if (expEl) {
+        expEl.innerText = dayExpTotal.toLocaleString('en-IN');
+      }
+    };
+
+    // പേജ് ലോഡ് ആകുമ്പോൾ തന്നെ ഇത് സജീവമാക്കുന്നു
+    document.addEventListener("DOMContentLoaded", () => {
+      setTimeout(() => {
+        if (typeof renderQuickTotalsAndRecent === 'function') renderQuickTotalsAndRecent();
+      }, 500);
+    });
+  </script>
 </body>
 </html>
