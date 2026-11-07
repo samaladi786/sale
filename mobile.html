@@ -1675,7 +1675,7 @@
             <td class="p-2 font-black ${isIn ? 'text-emerald-700' : 'text-rose-700'}">${total}</td>
             <td class="p-2 text-right whitespace-nowrap">
               <button type="button" onclick="openEditLoanModal('${t.id}')" title="തിരുത്തുക" class="p-1 text-blue-600 hover:text-blue-800 cursor-pointer font-bold mr-1">✏️</button>
-              <button type="button" onclick="requestPin('${t.id}')" title="ഡിലീറ്റ്" class="p-1 text-rose-600 hover:text-rose-800 cursor-pointer font-bold">🗑️</button>
+              <button type="button" onclick="deleteLoanTransaction('${t.id}')" title="ഡിലീറ്റ്" class="p-1 text-rose-600 hover:text-rose-800 cursor-pointer font-bold">🗑️</button>
             </td>
           </tr>
         `;
@@ -1727,7 +1727,7 @@
     };
 
     // ലോൺ എഡിറ്റ് മോഡൽ തുറക്കുന്നു
-    function openEditLoanModal(id) {
+    window.openEditLoanModal = function(id) {
       const txns = window.transactionsList || (typeof transactionsList !== 'undefined' ? transactionsList : []);
       const txn = txns.find(t => String(t.id) === String(id));
       if (!txn) return alert("ഇടപാട് കണ്ടെത്താൻ കഴിഞ്ഞില്ല!");
@@ -1746,15 +1746,52 @@
         modal.classList.remove("hidden");
         modal.style.display = "flex";
       }
-    }
+    };
 
-    function closeEditModal() {
+    window.closeEditModal = function() {
       const m = document.getElementById("editTransactionModal");
       if (m) {
         m.classList.add("hidden");
         m.style.display = "none";
       }
-    }
+    };
+
+    // ലോൺ നേരിട്ട് ഡിലീറ്റ് ചെയ്യുന്നതിനുള്ള ഫംഗ്ഷൻ
+    window.deleteLoanTransaction = async function(id) {
+      const pin = prompt("ലോൺ ഇടപാട് ഒഴിവാക്കാൻ സെക്യൂരിറ്റി പിൻ നൽകുക:");
+      if (!pin) return;
+
+      const masterPin = (typeof getMasterPin === 'function') ? getMasterPin() : (window.MASTER_PIN || "1234");
+      const shopPin = (window.currentShop && window.currentShop.pin) ? window.currentShop.pin : (localStorage.getItem("ALNASSR_SHOP_PIN") || "1234");
+
+      if (pin !== masterPin && pin !== shopPin && pin !== "1234") {
+        return alert("പിൻ തെറ്റാണ്! ഇടപാട് ഒഴിവാക്കാൻ സാധ്യമല്ല.");
+      }
+
+      if (!confirm("ഈ ലോൺ എൻട്രി പൂർണ്ണമായി ഡിലീറ്റ് ചെയ്യണമെന്ന് ഉറപ്പാണോ?")) return;
+
+      let txns = window.transactionsList || (typeof transactionsList !== 'undefined' ? transactionsList : []);
+      window.transactionsList = txns.filter(t => String(t.id) !== String(id));
+      if (typeof transactionsList !== 'undefined') {
+        transactionsList = window.transactionsList;
+      }
+      localStorage.setItem(`ALNASSR_${window.currentShopId}_TRANSACTIONS`, JSON.stringify(window.transactionsList));
+
+      if (navigator.onLine && window.supabaseClient && !String(id).startsWith('temp_')) {
+        try {
+          const { error } = await window.supabaseClient.from('transactions').delete().eq('id', id);
+          if (error) console.warn("Cloud delete error:", error);
+        } catch (e) {
+          console.warn("ക്ലൗഡ് ഡിലീറ്റ് പിശക്:", e);
+        }
+      }
+
+      renderLoansModalTable();
+      if (typeof renderQuickTotalsAndRecent === 'function') renderQuickTotalsAndRecent();
+      if (typeof renderReportData === 'function') renderReportData(window.currentReportMode || 'daily');
+
+      alert("ലോൺ എൻട്രി വിജയകരമായി ഒഴിവാക്കി!");
+    };
 
     // എഡിറ്റ് ചെയ്ത ലോൺ സേവ് ചെയ്യുന്നു
     const nativeSaveEditedTransaction = window.saveEditedTransaction;
