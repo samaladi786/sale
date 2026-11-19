@@ -450,6 +450,31 @@ function loadLocalCacheData() {
   }
 }
 
+async function fetchAllRowsFromTable(client, tableName, orderCol = 'id', ascending = true) {
+  let allRows = [];
+  let from = 0;
+  const batchSize = 1000;
+  while (true) {
+    let query = client.from(tableName).select('*');
+    if (orderCol) {
+      query = query.order(orderCol, { ascending: ascending });
+      if (orderCol !== 'id') {
+        query = query.order('id', { ascending: ascending });
+      }
+    }
+    const { data, error } = await query.range(from, from + batchSize - 1);
+    if (error) {
+      console.warn(`Error fetching ${tableName}:`, error.message);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    allRows = allRows.concat(data);
+    if (data.length < batchSize) break;
+    from += batchSize;
+  }
+  return allRows;
+}
+
 async function fetchAllData(manual = false) {
   if (!navigator.onLine || !supabaseClient) {
     if (manual) alert("ഓഫ്‍ലൈൻ മോഡിലാണ്! സേവ് ചെയ്ത ഡാറ്റ കാണിക്കുന്നു.");
@@ -457,37 +482,41 @@ async function fetchAllData(manual = false) {
   }
 
   try {
-    const [cRes, vRes, eRes, expRes, tRes, agRes, sRes, lRes] = await Promise.all([
-      supabaseClient.from('customers').select('*').order('name'),
-      supabaseClient.from('vendors').select('*').order('name'),
-      supabaseClient.from('employees').select('*').order('name'),
-      supabaseClient.from('expenses_master').select('*').order('name'),
-      supabaseClient.from('transactions').select('*').order('date', { ascending: false }).limit(2500),
-      supabaseClient.from('agents').select('*').order('name'),
+    const [cData, vData, eData, expData, tData, agData, sRes, lData] = await Promise.all([
+      fetchAllRowsFromTable(supabaseClient, 'customers', 'name', true),
+      fetchAllRowsFromTable(supabaseClient, 'vendors', 'name', true),
+      fetchAllRowsFromTable(supabaseClient, 'employees', 'name', true),
+      fetchAllRowsFromTable(supabaseClient, 'expenses_master', 'name', true),
+      fetchAllRowsFromTable(supabaseClient, 'transactions', 'date', false),
+      fetchAllRowsFromTable(supabaseClient, 'agents', 'name', true),
       supabaseClient.from('app_settings').select('*'),
-      supabaseClient.from('loans_master').select('*').order('name')
+      fetchAllRowsFromTable(supabaseClient, 'loans_master', 'name', true)
     ]);
 
-    customersList = cRes.data || [];
-    vendorsList = vRes.data || [];
-    employeesList = eRes.data || [];
-    expensesMasterList = expRes.data || [];
-    loansMasterList = lRes.data || [];
-    transactionsList = tRes.data || [];
-    agentsList = agRes.data || [];
+    customersList = cData || [];
+    vendorsList = vData || [];
+    employeesList = eData || [];
+    expensesMasterList = expData || [];
+    loansMasterList = lData || [];
+    transactionsList = tData || [];
+    agentsList = agData || [];
 
     if (sRes.data && sRes.data[0]) {
       openingSettings.openingCash = parseFloat(sRes.data[0].opening_cash) || 0;
       openingSettings.openingBank = parseFloat(sRes.data[0].opening_bank) || 0;
     }
 
-    localStorage.setItem(`ALNASSR_${currentShopId}_CUSTOMERS`, JSON.stringify(customersList));
-    localStorage.setItem(`ALNASSR_${currentShopId}_VENDORS`, JSON.stringify(vendorsList));
-    localStorage.setItem(`ALNASSR_${currentShopId}_EMPLOYEES`, JSON.stringify(employeesList));
-    localStorage.setItem(`ALNASSR_${currentShopId}_EXPENSES`, JSON.stringify(expensesMasterList));
-    localStorage.setItem(`ALNASSR_${currentShopId}_LOANS`, JSON.stringify(loansMasterList));
-    localStorage.setItem(`ALNASSR_${currentShopId}_TRANSACTIONS`, JSON.stringify(transactionsList));
-    localStorage.setItem(`ALNASSR_${currentShopId}_AGENTS`, JSON.stringify(agentsList));
+    try {
+      localStorage.setItem(`ALNASSR_${currentShopId}_CUSTOMERS`, JSON.stringify(customersList));
+      localStorage.setItem(`ALNASSR_${currentShopId}_VENDORS`, JSON.stringify(vendorsList));
+      localStorage.setItem(`ALNASSR_${currentShopId}_EMPLOYEES`, JSON.stringify(employeesList));
+      localStorage.setItem(`ALNASSR_${currentShopId}_EXPENSES`, JSON.stringify(expensesMasterList));
+      localStorage.setItem(`ALNASSR_${currentShopId}_LOANS`, JSON.stringify(loansMasterList));
+      localStorage.setItem(`ALNASSR_${currentShopId}_TRANSACTIONS`, JSON.stringify(transactionsList));
+      localStorage.setItem(`ALNASSR_${currentShopId}_AGENTS`, JSON.stringify(agentsList));
+    } catch (storageErr) {
+      console.warn("LocalStorage cache limit reached:", storageErr);
+    }
 
     populateDropdowns();
     renderQuickTotalsAndRecent();
