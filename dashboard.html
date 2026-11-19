@@ -540,23 +540,42 @@
       `;
       if (window.lucide) lucide.createIcons();
 
+      const fetchAllDashRows = async (client, tableName, orderCol = null, ascending = true) => {
+        let allRows = [];
+        let from = 0;
+        const batchSize = 1000;
+        while (true) {
+          let query = client.from(tableName).select('*');
+          if (orderCol) {
+            query = query.order(orderCol, { ascending: ascending });
+            if (orderCol !== 'id') {
+              query = query.order('id', { ascending: ascending });
+            }
+          }
+          const { data, error } = await query.range(from, from + batchSize - 1);
+          if (error) {
+            console.warn(`Error fetching ${tableName}:`, error.message);
+            break;
+          }
+          if (!data || data.length === 0) break;
+          allRows = allRows.concat(data);
+          if (data.length < batchSize) break;
+          from += batchSize;
+        }
+        return allRows;
+      };
+
       const shopPromises = SHOPS.map(async (shop, shopIdx) => {
         try {
           const client = window.supabase.createClient(shop.url, shop.key);
-          const [cRes, vRes, eRes, expRes, tRes, sRes] = await Promise.all([
-            client.from('customers').select('*'),
-            client.from('vendors').select('*'),
-            client.from('employees').select('*'),
-            client.from('expenses_master').select('*'),
-            client.from('transactions').select('*').order('date', { ascending: true }),
+          const [customers, vendors, employees, expensesMaster, txns, sRes] = await Promise.all([
+            fetchAllDashRows(client, 'customers', 'name', true),
+            fetchAllDashRows(client, 'vendors', 'name', true),
+            fetchAllDashRows(client, 'employees', 'name', true),
+            fetchAllDashRows(client, 'expenses_master', 'name', true),
+            fetchAllDashRows(client, 'transactions', 'date', true),
             client.from('app_settings').select('*')
           ]);
-
-          const customers = cRes.data || [];
-          const vendors = vRes.data || [];
-          const employees = eRes.data || [];
-          const expensesMaster = expRes.data || [];
-          const txns = tRes.data || [];
 
           let openCash = 0, openBank = 0;
           if (sRes.data && sRes.data[0]) {
